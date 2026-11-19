@@ -1,0 +1,5 @@
+# Menu with sound on: stay in the main menu long enough for music to start.
+frames 900
+capture menu-idle
+frames 4
+frames 600

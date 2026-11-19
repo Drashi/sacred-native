@@ -1,0 +1,104 @@
+# Sacred Native (macOS Apple Silicon)
+
+A native port of Sacred Gold for Apple Silicon Macs (arm64, macOS 15 or newer). It needs **your own installed copy** of the
+game (the directory containing `Sacred.exe`, e.g. copied from a Windows/GOG installation); no game data is part of this
+download and the installation is only ever read.
+
+## Run
+
+    xattr -dr com.apple.quarantine sacred-native-macos-arm64   # once, after extracting a downloaded archive
+    ./sacred-launcher                                           # a window: installation, Settings page, Play
+    ./sacred-gold "/path/to/Sacred Gold"                        # the same from a terminal
+
+The launcher's **Settings** page holds this port's options (display mode, screen size, frame rate limit, the original
+Sacred look, render scale, HD textures), each with a line on what it does; a change is written into the profile's
+`Settings.cfg` at once. A new profile starts fullscreen at the display's size, at the display's refresh rate, with
+render scale 2x and HD textures 2x.
+
+No code of the game is part of this download either: the first start (and the first after an update) translates the
+game from your own `Sacred.exe`, `granny.dll` and `tincat2.dll` with the bundled translator (`source/`, `python/`)
+and the system's clang (Xcode's command line tools), or the bundled Zig when they are missing; about three minutes on
+an Apple M-series machine, into
+`~/Library/Application Support/Sacred Native/game-module/libsacred_game.dylib`. Later starts reuse it at once.
+
+The binaries are ad-hoc signed, not notarized, so Gatekeeper blocks them while the download quarantine flag is set.
+
+The path is remembered. Without an argument the launcher tries `$SACRED_GOLD_DIR`, the remembered path and common
+locations (`~/Games`, `~/Applications`, `/Applications`, CrossOver bottles' `drive_c`), and otherwise prints how to pass it.
+
+* Profile (settings, saves): `~/Library/Application Support/Sacred Native/Sacred Gold` (`--profile DIR` or `$SACRED_PROFILE`).
+* First run seeds `Settings.cfg` there from the installation's file with `FULLSCREEN : 0`, `SOUND : 1`, `SHOWMOVIE : 1`
+  (a minimal file if the installation has none). The launcher's Settings page edits the keys below in it, or edit it
+  by hand (the game keeps keys it does not know when it writes the file).
+* Fullscreen: `--fullscreen` (remembered until `--windowed`), or Alt/Option+Enter in the game window. `FULLSCREEN : 1`
+  in `Settings.cfg` is converted to `--fullscreen`: the engine has no exclusive DirectDraw fullscreen, so the game runs
+  windowed in a window that covers the display. Without `HD_WIDTH`/`HD_HEIGHT` a fullscreen start sets the game
+  screen to the display's size (`SACRED_HD_AUTO=0` keeps 1024x768).
+* `LEGACY_UI : 1` in `Settings.cfg` switches to the original Sacred look: its UI skin (bronze frames with vines,
+  in the menus and in game), menu art (sunlit gate main menu, character select cave, dwarven hall behind the
+  options) and menu music (`MUSIC_MENU.mp3`)
+  instead of the Underworld skin, art and `MENU_ADDON.mp3`.
+  The original character-select backdrop has no places for the two Underworld classes; a repainted 1024x768 PNG can
+  replace it: `python3 tools/legacy_char_pak.py GAME BACKDROP.png PROFILE` writes `PROFILE/PAK/texture03.pak`
+  (delete it to go back). The art is in every Sacred Gold installation; Gold only disabled it.
+* Log: `<profile>/sacred-native.log` (previous run: `.log.1`). Engine options go after `--`, e.g. `sacred-gold GAME -- --hle-trace`.
+
+## Graphics
+
+The renderer uses the macOS OpenGL 4.1 core profile (it runs on Metal underneath) and logs one `SACRED_GL path=core-4.1` line.
+
+Optional, off by default (`Settings.cfg` key, or the environment variable, which wins; a directory may be in quotes
+and may start with `~/`, and a relative one is read from the working directory, so give a full path):
+
+* `RENDER_SCALE : 2` / `SACRED_RENDER_SCALE=2` (1..4): the 3D scene and the screen are rendered at k times the game
+  resolution and filtered down to the window (sharper models and edges; k*k times the GPU fill cost).
+* `TEXTURE_PACK : DIR` / `SACRED_TEXTURE_PACK=DIR`: replacement textures. A PNG named `<w>x<h>_<FORMAT>_<hash>.png`
+  (or `<hash>.png`, in any subdirectory) replaces the game texture with that content hash; it must be an integer
+  multiple of the original size (e.g. 512x512 for a 256x256 texture), same factor on both axes.
+* `TEXTURE_UPSCALE : 2` / `SACRED_TEXTURE_UPSCALE=2` (2..4): the same as a full pack built by
+  `tools/textures/texture_pack_build.py` (Lanczos, atlas-safe, byte for byte the same images), made by the engine
+  from the game's own textures when they are first used, on background threads (about 10 ms per texture), so no
+  pack needs to be built or stored. A texture shows in its original size for the frame or two until its upscale is
+  ready. Pack files win where both exist. The first start reads the game's texture paks for the list of textures
+  to upscale (about 10 s in the background); the list is kept in the profile (`texture-upscale.index`). Use it with
+  `RENDER_SCALE : 2`, which is what makes the larger textures visible.
+* `SACRED_TEXTURE_DUMP=DIR` writes every distinct game texture once under that name, as the starting point for a pack.
+* `MENU_BACKGROUNDS : DIR` / `SACRED_MENU_BACKGROUNDS=DIR` (HD mode): wide pictures for the screens the game draws
+  at 1024x768 (menus, loading screens). In HD mode those screens are scaled to the window height; without pictures
+  the sides stay black. One PNG per screen, named `options-sacred.png`, `options-underworld.png`, `saveload.png`
+  (the save and load window, the same in both looks), `charselect-sacred.png`, `charselect-underworld.png`,
+  `main-sacred.png`, `main-underworld.png` (the `-sacred` ones with `LEGACY_UI : 1`), `loading-<bitmap>.png` for
+  `PAK/<bitmap>.bmp` (e.g. `loading-loadinguw00.png`) and `worldmap.png`: any height (768 or a multiple), wider than
+  4:3, with the original screen unchanged in the middle; or as a pair `<screen>.sides.png` + `<screen>.mask.png`
+  holding only the pixels that differ from the game's screen, which the engine fills in from your `texture.pak`
+  (`tools/menu/split_backgrounds.py`; the bundle's `menu-backgrounds/` holds such pairs for every screen but the
+  world map, and the launcher uses them whenever the screen size is not the original)
+  (the picture may blend into its new sides near the old 4:3 border: the game's own background is taken from the
+  picture too). The main menu and the character select are drawn on a canvas as wide as the window (up to 1836x768):
+  their picture is the foreground, with alpha where the live sky and water show through (the sky and the water then
+  reach across the whole window; where the picture paints the water under its holes as the game shows it, that
+  painting continues the water at the sides); without one only the original middle is shown. The bundle's pictures
+  were made for this project from the game's screens; to use your own, put them in another directory and name it
+  here. The log lists what was found (`MENU_BACKGROUNDS ...`), and says so when
+  the directory cannot be opened, holds no usable picture or links to pictures that are not there (a link with a
+  relative target breaks when it is copied elsewhere: copy the pictures themselves), or when HD mode is off.
+* `FPS_LIMIT : 120` / `SACRED_FPS_LIMIT=120` (30..240, or `auto` for the display's refresh rate): the frame rate cap,
+  60 as in the original when unset. Movement, animation and game logic are timed, so they keep their speed; the
+  frame-counted timeouts, the day/night clock and one weather drift are corrected for the new rate. A network game
+  stays at 60. Only the game's own limiter paces the frames unless `Settings.cfg` sets `WAITRETRACE` (1..8: wait that many
+  ticks of the frame rate clock per frame, which rounds every frame up to the next tick).
+* `SHOW_FPS : 1` / `SACRED_SHOW_FPS=1`: a frame rate counter (frames presented per second, updated twice a second)
+  in the top-left corner of the game's image; off by default, also on the launcher's Settings page. Screenshots
+  taken by the runtime leave it out.
+
+## Contents and dependencies
+
+* `sacred-launcher` (window), `sacred-gold` (terminal), `sacred-native` (the runtime; it loads the game module built
+  on your machine), `lib/` (see `lib/BUNDLED_LIBRARIES.txt`), `source/`, `python/`, `zig/`, `menu-backgrounds/`, `tools/`,
+  `licenses/`.
+* Bundled: FFmpeg (LGPL, WMV/WMA only), SDL2 (zlib), FreeType (FTL), the Bochs softfloat library (LGPL-2.1+), Zig (MIT)
+  and CPython (PSF) for the first-start build. Everything else comes from macOS itself.
+
+FFmpeg is linked dynamically: `lib/libav*.dylib` and `lib/libsw*.dylib` can be replaced by your own build of the same
+install names (`@rpath/...`); re-sign them afterwards with `codesign --force --sign - lib/*.dylib`. Its source and
+the script that built these libraries are in `licenses/` (`ffmpeg-*.tar.xz`, `ffmpeg-build.sh`).

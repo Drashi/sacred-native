@@ -1,0 +1,52 @@
+name: Bug report
+description: Something does not work as in the original game, or does not work at all.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not attach game files, screenshots or recordings of the game: the repository holds nothing of the
+        game. Describe what you see instead; the log (`sacred-native.log`, next to your settings and saves) helps most.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release (e.g. v0.1.0) or the commit you built.
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options:
+        - macOS (Apple Silicon)
+        - Linux ARM64
+    validations:
+      required: true
+  - type: input
+    id: system-details
+    attributes:
+      label: System details
+      description: macOS version, or Linux distribution, desktop (X11 or Wayland) and GPU.
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Sacred Gold installation
+      description: Where it comes from (GOG, CD, Steam) and its language. Sacred Native needs the English 2.28.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: The relevant part of sacred-native.log.
+      render: text

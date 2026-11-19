@@ -1,0 +1,237 @@
+// Opt-in screen size: Settings.cfg parsing and the guest writes of a resolution table. The table here is a fixture
+// with the shape tools/lift/resolution.py generates.
+#include "runtime/modules/resolution.h"
+#include "runtime/modules/resolution_table.h"
+#include "runtime/process/memory.h"
+#include <cstdio>
+#include <cstring>
+
+extern "C" {
+const char resolution_table_sha256[] = "fixture";
+const unsigned resolution_write_count = 5u;
+const uint32_t resolution_inset_address = 0u;
+const struct ResolutionWrite resolution_writes[] = {
+    {0x00500000u, 4u, 1u, 0u}, // cell: W
+    {0x00500008u, 4u, 1u, 0u}, // cell: f32 H/2
+    {0x00500010u, 4u, 1u, 0u}, // cell: hd(0x2ef0f4, 0x970f4)
+    {0x00500020u, 4u, 1u, 1u}, // cell: 100*F/60
+    {0x00501000u, 2u, 0u, 0u}, // data: W - 1024 + 0x2a8, read-only page
+};
+const unsigned resolution_blob_count = 0u;
+const struct ResolutionBlob resolution_blobs[] = {{0u, 0u, ""}};
+const unsigned resolution_option_write_count = 0u;
+const struct ResolutionOptionWrite resolution_option_writes[] = {{"", 0u, 0u, ""}};
+const unsigned resolution_option_count = 1u;
+const struct ResolutionOption resolution_options[] = {
+    {"LEGACY_UI", 0x00500018u}, // switch word tested by a generated option hook
+};
+uint64_t resolution_value(unsigned index, int32_t w, int32_t h, int32_t hd, int32_t f) {
+    switch (index) {
+    case 0u:
+        return uint64_t(w);
+    case 1u: {
+        float f = float(h / 2);
+        uint32_t u;
+        std::memcpy(&u, &f, 4);
+        return u;
+    }
+    case 2u:
+        return hd ? 0x2ef0f4u : 0x970f4u;
+    case 3u:
+        return uint64_t(100 * int64_t(f) / 60);
+    case 4u:
+        return uint64_t(int64_t(w) - 1024 + 0x2a8);
+    default:
+        return 0u;
+    }
+}
+
+const struct ResolutionTable resolution_table = {resolution_table_sha256,
+                                                 resolution_write_count,
+                                                 resolution_inset_address,
+                                                 resolution_writes,
+                                                 resolution_blob_count,
+                                                 resolution_blobs,
+                                                 resolution_option_write_count,
+                                                 resolution_option_writes,
+                                                 resolution_option_count,
+                                                 resolution_options,
+                                                 resolution_value};
+}
+
+namespace {
+int failures = 0;
+void expect(bool condition, const char* what, int line) {
+    if (!condition) {
+        std::fprintf(stderr, "FAIL line %d: %s\n", line, what);
+        ++failures;
+    }
+}
+#define EXPECT(condition) expect((condition), #condition, __LINE__)
+float f32(sacred::Memory& m, uint32_t address) {
+    uint32_t bits = m.load32(address);
+    float f;
+    std::memcpy(&f, &bits, 4);
+    return f;
+}
+
+uint16_t u16(sacred::Memory& m, uint32_t address) {
+    uint16_t v;
+    std::memcpy(&v, reinterpret_cast<const void*>(m.host_address(address)), 2);
+    return v;
+}
+}
+
+int main() {
+    sacred::use_resolution_table(resolution_table);
+    using sacred::parse_resolution_settings;
+    // Off without both keys; the original lines around them are ignored.
+    auto config = parse_resolution_settings("FULLSCREEN : 1\r\nWINDOW_WIDTH : 1366\r\n");
+    EXPECT(!config.enabled && config.width == 1024 && config.height == 768);
+    config = parse_resolution_settings("HD_WIDTH : 1366\r\n");
+    EXPECT(!config.enabled);
+    config = parse_resolution_settings("SOUND : 1\r\nHD_WIDTH : 1366\r\nHD_HEIGHT : 768\r\nVIOLENCE : 1\r\n");
+    EXPECT(config.enabled && config.width == 1366 && config.height == 768);
+    config = parse_resolution_settings("HD_WIDTH:1920\nHD_HEIGHT:1080");
+    EXPECT(config.enabled && config.width == 1920 && config.height == 1080);
+    // Below the minimum: raised to 1024x720.
+    config = parse_resolution_settings("HD_WIDTH : 800\nHD_HEIGHT : 600\n");
+    EXPECT(config.enabled && config.width == 1024 && config.height == 720);
+    // Fullscreen without keys takes the display's size; a 1024x768 display keeps the original mode off.
+    config = sacred::display_resolution(1920, 1080);
+    EXPECT(config.enabled && config.width == 1920 && config.height == 1080);
+    config = sacred::display_resolution(1280, 600);
+    EXPECT(config.enabled && config.width == 1280 && config.height == 720);
+    config = sacred::display_resolution(1024, 768);
+    EXPECT(!config.enabled && config.width == 1024 && config.height == 768);
+    // Not a number: treated as absent.
+    config = parse_resolution_settings("HD_WIDTH : wide\nHD_HEIGHT : 768\n");
+    EXPECT(!config.enabled);
+    config = parse_resolution_settings("HD_WIDTH : -1366\nHD_HEIGHT : 768\n");
+    EXPECT(!config.enabled);
+
+    // HD rendering options: off by default; RENDER_SCALE 1..4 only; the environment wins over Settings.cfg.
+    using sacred::parse_hd_options;
+    auto hd = parse_hd_options("HD_WIDTH : 1366\r\n", nullptr, nullptr, nullptr);
+    EXPECT(hd.render_scale == 1 && hd.texture_pack.empty() && hd.texture_dump.empty());
+    hd = parse_hd_options("RENDER_SCALE : 2\r\nTEXTURE_PACK : /packs/hd \r\n", nullptr, nullptr, nullptr);
+    EXPECT(hd.render_scale == 2 && hd.texture_pack == "/packs/hd" && hd.menu_backgrounds.empty());
+    // Wide screen images: a directory from Settings.cfg, the environment wins.
+    hd = parse_hd_options("MENU_BACKGROUNDS : /art/menus \r\n", nullptr, nullptr, nullptr);
+    EXPECT(hd.menu_backgrounds == "/art/menus" && hd.notes.empty());
+    EXPECT(parse_hd_options("MENU_BACKGROUNDS : /art/menus\n", nullptr, nullptr, nullptr, "/other").menu_backgrounds ==
+           "/other");
+    // Directories as written by hand: one pair of surrounding quotes goes, a leading ~/ is $HOME (file and
+    // environment); anything else stays as written.
+    using sacred::option_directory;
+    EXPECT(option_directory(" \"/Users/me/Sacred Packs/bg\" \r", "/Users/me") == "/Users/me/Sacred Packs/bg");
+    EXPECT(option_directory("'/art/menus'", nullptr) == "/art/menus");
+    EXPECT(option_directory("~/packs/bg", "/Users/me") == "/Users/me/packs/bg");
+    EXPECT(option_directory("\"~/packs/bg\"", "/Users/me/") == "/Users/me/packs/bg");
+    EXPECT(option_directory("~", "/Users/me") == "/Users/me");
+    EXPECT(option_directory("~/packs", nullptr) == "~/packs" && option_directory("~/packs", "") == "~/packs");
+    EXPECT(option_directory("~other/packs", "/Users/me") == "~other/packs");
+    EXPECT(option_directory("\"/art", nullptr) == "\"/art" && option_directory("\"/art'", nullptr) == "\"/art'");
+    EXPECT(option_directory("\"", nullptr) == "\"" &&
+           option_directory("build/menu-hd/backgrounds", "/h") == "build/menu-hd/backgrounds");
+    hd = parse_hd_options("MENU_BACKGROUNDS : \"~/Sacred/bg\"\r\nTEXTURE_PACK : '~/Sacred/pack'\r\n", nullptr, nullptr,
+                          nullptr, nullptr, "/Users/me");
+    EXPECT(hd.menu_backgrounds == "/Users/me/Sacred/bg" && hd.texture_pack == "/Users/me/Sacred/pack");
+    hd = parse_hd_options("", nullptr, " ~/pack ", nullptr, "\"~/bg\"", "/Users/me");
+    EXPECT(hd.menu_backgrounds == "/Users/me/bg" && hd.texture_pack == "/Users/me/pack");
+    for (const char* bad : {"RENDER_SCALE : 0\n", "RENDER_SCALE : 5\n", "RENDER_SCALE : 1.5\n", "RENDER_SCALE : x\n",
+                            "RENDER_SCALE : -1\n", "RENDER_SCALE : 999999\n", "RENDER_SCALE : 99999999999\n",
+                            "RENDER_SCALE : 2.0\n", "RENDER_SCALE : +2\n", "RENDER_SCALE : 0x2\n", "RENDER_SCALE :\n",
+                            "RENDER_SCALE : 2 2\n", "RENDER_SCALE : 18446744073709551618\n"}) {
+        hd = parse_hd_options(bad, nullptr, nullptr, nullptr);
+        EXPECT(hd.render_scale == 1 && hd.notes.size() == 1);
+    }
+
+    // The environment: surrounding blanks are fine; an invalid value is noted and leaves Settings.cfg's scale.
+    EXPECT(parse_hd_options("", " 2 ", nullptr, nullptr).render_scale == 2);
+    EXPECT(parse_hd_options("RENDER_SCALE : 4\n", nullptr, nullptr, nullptr).render_scale == 4);
+    for (const char* bad : {"abc", "0", "-1", "5", "999999", "99999999999", "1.5", "2.0", "\t", "2abc"}) {
+        hd = parse_hd_options("", bad, nullptr, nullptr);
+        EXPECT(hd.render_scale == 1 && hd.notes.size() == 1);
+        hd = parse_hd_options("RENDER_SCALE : 3\n", bad, nullptr, nullptr);
+        EXPECT(hd.render_scale == 3 && hd.notes.size() == 1);
+    }
+
+    // Valid values carry no note; the scale needs no pack.
+    hd = parse_hd_options("RENDER_SCALE : 2\n", "4", nullptr, nullptr);
+    EXPECT(hd.render_scale == 4 && hd.notes.empty() && hd.texture_pack.empty());
+    // SACRED_TEXTURE_CACHE_MB: 1..65536, anything else 128 with a note.
+    std::string note;
+    EXPECT(sacred::parse_texture_cache_mb(nullptr, &note) == 128 && note.empty());
+    EXPECT(sacred::parse_texture_cache_mb("", &note) == 128 && note.empty());
+    EXPECT(sacred::parse_texture_cache_mb(" 1024 ", &note) == 1024 && note.empty());
+    EXPECT(sacred::parse_texture_cache_mb("1", &note) == 1 && note.empty());
+    EXPECT(sacred::parse_texture_cache_mb("65536", &note) == 65536 && note.empty());
+    for (const char* bad : {"0", "-5", "65537", "99999999999", "abc", "1.5", "512MB", "18446744073709551617"}) {
+        note.clear();
+        EXPECT(sacred::parse_texture_cache_mb(bad, &note) == 128 && !note.empty());
+    }
+
+    hd = parse_hd_options("RENDER_SCALE : 2\nTEXTURE_PACK : a\n", "3", "b", "c");
+    EXPECT(hd.render_scale == 3 && hd.texture_pack == "b" && hd.texture_dump == "c");
+    hd = parse_hd_options("RENDER_SCALE : 2\n", "", "", "");
+    EXPECT(hd.render_scale == 2 && hd.texture_pack.empty() && hd.texture_dump.empty());
+
+    sacred::Memory memory;
+    memory.reserve(0x00500000u, 2 * sacred::Memory::page_size, "fixture");
+    memory.commit(0x00500000u, sacred::Memory::page_size, sacred::Read | sacred::Write, "fixture");
+    memory.commit(0x00501000u, sacred::Memory::page_size, sacred::Read, "fixture");
+    const uint16_t original = 0x2a8;
+    std::memcpy(reinterpret_cast<void*>(memory.host_address(0x00501000u)), &original, 2);
+
+    // Off: cells get the original values, data stays.
+    EXPECT(sacred::apply_resolution(memory, {}) == 4u);
+    EXPECT(memory.load32(0x00500020u) == 100u);
+    EXPECT(memory.load32(0x00500000u) == 1024u);
+    EXPECT(memory.load32(0x00500010u) == 0x970f4u);
+    EXPECT(f32(memory, 0x00500008u) == 384.0f);
+    EXPECT(u16(memory, 0x00501000u) == 0x2a8);
+    // On: cells and data (also in a read-only page) follow the configured size.
+    EXPECT(sacred::apply_resolution(memory, {true, 1366, 768}) == 5u);
+    EXPECT(memory.load32(0x00500000u) == 1366u);
+    EXPECT(memory.load32(0x00500010u) == 0x2ef0f4u);
+    EXPECT(f32(memory, 0x00500008u) == 384.0f);
+    EXPECT(u16(memory, 0x00501000u) == 0x2a8 + 342);
+    EXPECT(!(memory.permissions(0x00501000u) & sacred::Write));
+    // The frame rate limit: every cell follows it at start; later only the F cells are rewritten.
+    EXPECT(sacred::apply_resolution(memory, {}, 120) == 4u);
+    EXPECT(memory.load32(0x00500020u) == 200u && memory.load32(0x00500000u) == 1024u);
+    memory.store32(0x00500000u, 7u);
+    EXPECT(sacred::apply_fps_limit(memory, {}, 60) == 1u);
+    EXPECT(memory.load32(0x00500020u) == 100u && memory.load32(0x00500000u) == 7u);
+    // FPS_LIMIT: unset 60, integers 30..240 or auto, the environment wins, invalid values are noted and ignored.
+    using sacred::parse_fps_limit;
+    auto fps = parse_fps_limit("SOUND : 1\r\n", nullptr);
+    EXPECT(fps.fps == 60 && !fps.automatic && fps.notes.empty());
+    fps = parse_fps_limit("FPS_LIMIT : 120\r\n", nullptr);
+    EXPECT(fps.fps == 120 && !fps.automatic);
+    fps = parse_fps_limit("FPS_LIMIT : auto\r\n", nullptr);
+    EXPECT(fps.automatic && sacred::resolve_fps_limit(fps, 144) == 144 && sacred::resolve_fps_limit(fps, 0) == 60 &&
+           sacred::resolve_fps_limit(fps, 360) == 240 && sacred::resolve_fps_limit(fps, 24) == 30);
+    fps = parse_fps_limit("FPS_LIMIT : auto\n", "90");
+    EXPECT(fps.fps == 90 && !fps.automatic && sacred::resolve_fps_limit(fps, 144) == 90);
+    for (const char* bad : {"0", "29", "241", "1.5", "x", "-60", ""}) {
+        fps = parse_fps_limit(std::string("FPS_LIMIT : ") + bad + "\n", nullptr);
+        EXPECT(fps.fps == 60 && fps.notes.size() == 1);
+    }
+
+    EXPECT(parse_fps_limit("FPS_LIMIT : 144\n", "abc").fps == 144);
+    // Settings.cfg switches: any value but 0 turns one on, the last line wins, unknown keys are ignored.
+    using sacred::parse_option_settings;
+    EXPECT(parse_option_settings("SOUND : 1\r\n").empty());
+    EXPECT(parse_option_settings("LEGACY_UI : 1\r\n") == std::vector<std::string>{"LEGACY_UI"});
+    EXPECT(parse_option_settings("LEGACY_UI:1\nLEGACY_UI : 0\n").empty());
+    EXPECT(parse_option_settings("LEGACY_UI : 0\n").empty());
+    EXPECT(parse_option_settings("LEGACY_UI :\n").empty());
+    if (failures) {
+        return 1;
+    }
+
+    std::puts("HD_RESOLUTION_TESTS_PASS");
+    return 0;
+}

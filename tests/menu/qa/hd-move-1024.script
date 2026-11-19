@@ -1,0 +1,65 @@
+# HD regression (1024): the Dwarf start (hd-dwarf-1024.script) with the loading screen captured, then three clicks at fixed offsets from the screen centre (+200,0 / 0,+150 / -200,-100). Each click target is settled before the capture, so the 1024 and 1366 captures must show the same world (tests/menu/hd_compare.py with the probes 180,230,200,150 460,140,70,60 880,330,120,200 560,70,60,60, away from the animated hero). Held-button walking is time based and not frame deterministic; it shares the click's screen-to-world target code.
+frames 600
+move 510 288
+frames 100
+down 1
+frames 3
+up 1
+frames 400
+capture 01-charselect
+frames 4
+move 530 430
+frames 100
+move 530 430
+frames 100
+down 1
+frames 3
+up 1
+frames 200
+capture 02-class-selected
+frames 4
+move 590 714
+frames 100
+down 1
+frames 3
+up 1
+frames 30
+capture 02b-loading
+frames 4
+waitmark treppe.bin 4000
+waitmark wea.bin 1500
+frames 150
+capture 03-world-start
+frames 4
+dismiss 12 20
+frames 60
+dismiss 12 20
+frames 60
+move 1000 10
+frames 120
+capture 04-world-idle
+frames 4
+move 712 384
+frames 10
+down 1
+frames 3
+up 1
+frames 400
+capture 05-click
+frames 4
+move 512 534
+frames 10
+down 1
+frames 3
+up 1
+frames 400
+capture 06-click
+frames 4
+move 312 284
+frames 10
+down 1
+frames 3
+up 1
+frames 400
+capture 07-click
+frames 4

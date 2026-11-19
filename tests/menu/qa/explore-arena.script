@@ -1,0 +1,78 @@
+# Unattended variant (waits on QA_FILE_OPEN world-load marker, generic dismiss). Original: Ancaria Campaign, first class (Gladiator), Start Game, dismiss the two tutorial dialogs, ground click.
+frames 600
+move 510 288
+frames 100
+down 1
+frames 3
+up 1
+frames 400
+capture 01-charselect
+frames 4
+move 100 480
+frames 100
+down 1
+frames 3
+up 1
+frames 200
+capture 02-class-selected
+frames 4
+move 590 714
+frames 100
+down 1
+frames 3
+up 1
+waitmark treppe.bin 4000
+waitmark wea.bin 1500
+frames 120
+capture 03-intro-dialog
+frames 4
+dismiss 12 20
+frames 40
+capture 04-tips-dialog
+frames 4
+move 683 340
+frames 60
+down 1
+frames 3
+up 1
+frames 100
+dismiss 12 20
+frames 100
+capture E1-after-julius
+frames 4
+move 560 100
+frames 60
+down 1
+frames 3
+up 1
+frames 350
+dismiss 12 20
+capture E2-leg1
+frames 4
+move 900 420
+frames 60
+down 1
+frames 3
+up 1
+frames 350
+dismiss 12 20
+capture E3-leg2
+frames 4
+move 150 420
+frames 60
+down 1
+frames 3
+up 1
+frames 350
+dismiss 12 20
+capture E4-leg3
+frames 4
+move 500 660
+frames 60
+down 1
+frames 3
+up 1
+frames 350
+dismiss 12 20
+capture E5-leg4
+frames 4

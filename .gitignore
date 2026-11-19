@@ -1,0 +1,45 @@
+# Ghidra project and IR export made from the player's own game files (maintainers only).
+/ghidra-proj/
+/analysis/
+
+# Generated game translation and compiler products.
+/build/
+/out/
+/generated/
+**/generated/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.class
+*.pyc
+__pycache__/
+
+# Original proprietary modules and assets are never repository inputs.
+*.[eE][xX][eE]
+*.[dD][lL][lL]
+*.[aA][sS][iI]
+*.[mM]3[dD]
+*.[pP][aA][kK]
+*.[bB][iI][nN]
+/assets/
+/game/
+/World/
+/movie/
+/mp3/
+
+# Distribution bundle output (tools/dist/make_bundle.sh).
+/dist/
+
+# Evidence images and templates are derived from copyrighted game assets: keep them local, never in git.
+*.png
+*.bmp
+# Except the project's split menu pictures: only pixels that differ from the game's screens (data/menu-backgrounds).
+!/data/menu-backgrounds/*.sides.png
+!/data/menu-backgrounds/*.mask.png
+/tests/menu/qa/templates/
+/compile_commands.json
+/.cache/
+.pytest_cache/
+.DS_Store

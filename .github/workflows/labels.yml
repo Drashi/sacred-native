@@ -1,0 +1,31 @@
+# Labels a pull request from its Conventional Commits title (feat(menu): ... -> feature), so the release notes can
+# group it (.github/release.yml). Runs in the base repository's context but never checks out or runs the pull
+# request's code; the title only reaches the shell through an environment variable.
+name: Labels
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Label from the title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ github.event.pull_request.title }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          case "$TITLE" in
+              feat*) label=feature ;;
+              fix*) label=fix ;;
+              perf*) label=performance ;;
+              docs*) label=documentation ;;
+              ci* | build*) label=ci ;;
+              *) exit 0 ;;
+          esac
+          gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --add-label "$label"

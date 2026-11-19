@@ -1,0 +1,126 @@
+{
+  "upstream": "https://github.com/veritr1x/recomp-kit",
+  "commit": "eb32cc42623e0e9e868b9d27423a57d5a5cba56b",
+  "files": [
+    {
+      "path": "LICENSE",
+      "git_blob": "0dbf3687a61dc192f502ad41eb87122c28afb468",
+      "sha256": "bb9b50ab8aa46182372d754e1ce174d5479dfe3512590eaf1cc76b5bfed3bff2"
+    },
+    {
+      "path": "NOTICE",
+      "git_blob": "b3c1be4a7e9411f5720a4646fb55e9dea7880996",
+      "sha256": "b704e484eba868a54dc192e86654bf9cdd3071e0eefe898631a3e267650445c5"
+    },
+    {
+      "path": "tools/ExportProgram.java",
+      "git_blob": "f4eeef0b62dd3e6aac285f5d6a03d9dda34d631b",
+      "sha256": "b304c975e13bde156f2388e9f5bca4c34481b3cb2e247ac78bd63bac505a3b10"
+    },
+    {
+      "path": "tools/recomp/translate.py",
+      "git_blob": "944f2ca622923089b14d72976cfa1c528db9f758",
+      "sha256": "3cafe22afaa59cb1aa524be8e623839c2858c147b7a1f018286a29f5993ab3d9"
+    },
+    {
+      "path": "runtime/x86.h",
+      "git_blob": "4dc8955fcd42d838d0c0854275c01fe60c01bba1",
+      "sha256": "8218013933e0e57f734f884e5d295c4cfb5fe9e2cc6563587b959bcd85f0a09f"
+    },
+    {
+      "path": "runtime/seh.cpp",
+      "git_blob": "ac94a12b86600062d377fc30770a13e93d6643e4",
+      "sha256": "adf4ffc6d175c06db745e7cd59f0b26d173f629dffe773b47652c016bbe7df61"
+    },
+    {
+      "path": "runtime/seh.h",
+      "git_blob": "b457d2faa549626124e681a0538aca43275dc01c",
+      "sha256": "629dcb9b03c511312c618cb5507385800831fb994a32305903f17d67174e57f9"
+    },
+    {
+      "path": "runtime/intrinsics.h",
+      "git_blob": "41e2116d5df65cd2be534006d1aefd6192570c22",
+      "sha256": "33b578a364b5d764934b5c2ee8bdc105a169795fb373aa92138790c4bcaefd96"
+    },
+    {
+      "path": "runtime/tests/seh_tests.cpp",
+      "git_blob": "44b24b0d4b7f4d363d5283eb6c489abf6a12e52d",
+      "sha256": "edb210c8c0fd0729d9411cac2e9d279a4fd786a6022c6aa0ab4f46ef2d0c2c8d"
+    },
+    {
+      "path": "runtime/tests/runtime_tests.cpp",
+      "git_blob": "7016990545957a12a47f47b5dfa6b6c4279615be",
+      "sha256": "1a27ee30d803db667f2d7efb053ac66f729f36db0258ef8ecaaad7f650d6ca89"
+    },
+    {
+      "path": "tools/recomp/tests/harness.c",
+      "git_blob": "528180ae782e76d99bc2970a4a717330052ed101",
+      "sha256": "8d326e01f5d4e87009c79e1459f17a0b53635754ff021421e9fc122bafb99851"
+    },
+    {
+      "path": "tools/recomp/tests/test_eaxa.py",
+      "git_blob": "b26784d7455c233d298fca81ed33111dda014853",
+      "sha256": "fd266b1bacbb37d70ec5a026dcd6e95a76bed1892e42b66d8e7da52ad2c5045c"
+    },
+    {
+      "path": "tools/recomp/tests/test_jumptables.py",
+      "git_blob": "aad70f5adfb3fd061829bfe74df56b6820af9e4a",
+      "sha256": "de02cd14ae67214ae03a07c7807df81b3a7da2401357b2c06e5f9fa637eae3ed"
+    },
+    {
+      "path": "tools/recomp/tests/test_translate.py",
+      "git_blob": "b588a96faa3850144d00d95818df4524e5cfe3f6",
+      "sha256": "817fb19100dd428eba96ca5c885866ffd9c2d045fd9d033bad5129de4555bb2c"
+    },
+    {
+      "path": "tools/recomp/tests/test_translate_config.py",
+      "git_blob": "0dbb4716f00cce7084c63ecc4661c828e58fc399",
+      "sha256": "bfad73e88fee25c4123228ae10a9c4083de24358ff3da9a8cb9fc26b3e4751bc"
+    },
+    {
+      "path": "tools/recomp/tests/test_translate_driver.py",
+      "git_blob": "71465b79562361b9a387644ea60d21e43642ef73",
+      "sha256": "8b71f3dee7201f8e6d3ecff132632c2de7bcca3f3e67174f69c262a4cabb84bd"
+    },
+    {
+      "path": "tools/recomp/tests/test_translate_hooks.py",
+      "git_blob": "12677766db4d44911f191f366615071b2ae45aeb",
+      "sha256": "80c5d5c9d0ae98972fd3f71c4ba8b121b23025fa43b43a7926b7fb9ad9130fbd"
+    },
+    {
+      "path": "tools/recomp/tests/test_translate_imports.py",
+      "git_blob": "e212c1d0d3269ad085aef4d260afb4c0958dbe5b",
+      "sha256": "1d5a53b5538ae6f815b8386b4ef2f76088d78b278e363e225074d3040d25235a"
+    },
+    {
+      "path": "tools/recomp/tests/test_translate_insns.py",
+      "git_blob": "0aa877bae0a15feb46a5665a811b2d60485e8dbc",
+      "sha256": "054b8c601efdf7294be4a404321bb405aa925181254930765cb276c5a385bf9c"
+    },
+    {
+      "path": "tools/recomp/tests/test_translate_noreturn.py",
+      "git_blob": "f569db1d998dba17e541acc1051dc2e4adb58915",
+      "sha256": "e1097393061dfd40c3cd898e235d4b6aaab65759139f347b0cc6ddc201f60f6d"
+    },
+    {
+      "path": "tools/recomp/tests/test_translate_seh.py",
+      "git_blob": "e31c83536501f7778540f4979c78e553231df8d8",
+      "sha256": "fe16c38d1c1d036aa5369b3b6c248b43a52131d871d13607025cce1bfc094f28"
+    },
+    {
+      "path": "tools/recomp/tests/test_translate_vector.py",
+      "git_blob": "0f611db6b009af6787494dfba1f56a9cf168ae27",
+      "sha256": "512d64ddc3be6a0750529c137806143f747f3ed79560ef3d892ee3c9e5ab1671"
+    },
+    {
+      "path": "tools/game_config.py",
+      "git_blob": "20838ebee5d6b977779ea72b97fe5251390fefab",
+      "sha256": "b9c66125ed65d1f53c1318b8fdaf7645e0a519e195bcb295c4b11dc4f0d219e9"
+    },
+    {
+      "path": "tests/test_game_config.py",
+      "git_blob": "4f45372d49eec8462e13ca98d7c2a9f439755b59",
+      "sha256": "b7643cccb2087af62af92bfc44785d334cdaa22773abf0becc87a07ceab7d321"
+    }
+  ]
+}

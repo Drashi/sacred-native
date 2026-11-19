@@ -1,0 +1,16 @@
+# Sections of the generated release notes. Pull requests get these labels from their Conventional Commits title
+# (.github/workflows/labels.yml); Dependabot adds "dependencies" itself.
+changelog:
+  categories:
+    - title: New features
+      labels: [feature]
+    - title: Fixes
+      labels: [fix]
+    - title: Performance
+      labels: [performance]
+    - title: Documentation
+      labels: [documentation]
+    - title: Dependencies and CI
+      labels: [dependencies, ci]
+    - title: Other changes
+      labels: ["*"]

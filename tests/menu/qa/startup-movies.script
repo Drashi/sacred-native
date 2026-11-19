@@ -1,0 +1,9 @@
+# the startup movies (Ascaron, OEM) play to their natural end with audio, then the game reaches the main menu.
+# Frame counts are presented frames: Ascaron 325 + OEM 240 shown frames, then menu frames.
+waitmark MOVIE_PLAY 600
+frames 100
+capture movie-first
+frames 480
+frames 60
+capture menu-after-movies
+frames 5

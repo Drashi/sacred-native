@@ -1,0 +1,41 @@
+[
+  {
+    "module_id": "tincat2.dll",
+    "sha256": "f134adde22cc50052dd0abd9fcc1dcea2807f0733dee45f099e1119b644ed137",
+    "rva": "0x0003a770",
+    "source_rva": "0x0002acc9",
+    "source_length": 2,
+    "provenance": "Real translated DLL_PROCESS_ATTACH initializer-table CALL EAX; strict native miss",
+    "correction": "Offline Ghidra disassembly and function creation in the separate DLL project; byte-validated re-export"
+  },
+  {
+    "module_id": "sacred.exe",
+    "sha256": "db9b86a44c8c1cc8c5ed9e3f427121ab8b4ed62760861e58995f10af9d971e74",
+    "rva": "0x00449f6f",
+    "source_rva": "0x0044b067",
+    "source_length": 2,
+    "provenance": "Real translated EXE CRT initializer-table CALL EAX; strict native miss",
+    "correction": "Offline recovery in an isolated copy of the preserved Ghidra project; original project and original IR stay unchanged"
+  },
+  {
+    "module_id": "sacred.exe",
+    "sha256": "db9b86a44c8c1cc8c5ed9e3f427121ab8b4ed62760861e58995f10af9d971e74",
+    "table_rvas": [["0x004e7000", "0x004e71c0"], ["0x004e71c4", "0x004e71d8"]],
+    "element_bytes": 4,
+    "source_rva": "0x0044af50",
+    "provenance": "Original CRT cinit at 0084af50 passes these exact half-open bounds to 0084b056; the latter CALLs every nonzero table entry before WinMain",
+    "correction": "Admit the complete structurally verified initializer closure in the isolated project, rather than chase individual indirect misses"
+  },
+  {
+    "module_id": "sacred.exe",
+    "sha256": "db9b86a44c8c1cc8c5ed9e3f427121ab8b4ed62760861e58995f10af9d971e74",
+    "rva": "0x0034656f",
+    "source_rva": "0x0034656a",
+    "source_length": 5,
+    "correct_length": 10,
+    "withdrawn_candidate": {"rva": "0x00346573", "length": 3, "mnemonic": "JMPF"},
+    "clear_metadata_rvas_inclusive": ["0x0034656f", "0x00346575"],
+    "provenance": "Real constructor execution falls through the five-byte MOV at 0074656a into CALL 0074656f; the former far-jump candidate starts inside that CALL operand",
+    "correction": "Remove only conflicting decode metadata in the isolated project, then recover original instruction flow; do not reinterpret a far transfer as a near transfer"
+  }
+]

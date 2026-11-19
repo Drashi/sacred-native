@@ -1,0 +1,24 @@
+# Main-menu hover and click response. Coordinates are window-client pixels; waits count presented frames.
+frames 600
+capture menu-idle
+frames 4
+move 510 385
+frames 200
+capture hover-options
+frames 4
+move 510 288
+frames 200
+capture hover-ancaria
+frames 4
+move 510 512
+frames 200
+capture hover-quit
+frames 4
+move 510 385
+frames 100
+down 1
+frames 3
+up 1
+frames 300
+capture after-click-options
+frames 4

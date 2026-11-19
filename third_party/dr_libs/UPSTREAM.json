@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/mackron/dr_libs",
+  "commit": "dfe8377631000664666519fdb83da193fd8037f4",
+  "purpose": "WAV/PCM/ADPCM decode inside the Miles adapter (decision 2026-10-16)",
+  "files": [
+    {
+      "path": "dr_wav.h",
+      "sha256": "03e70c1a2d9787cd7ed3e966c075bea7bac6373f759db9cd7ca9ccdfc4ec4493"
+    }
+  ]
+}

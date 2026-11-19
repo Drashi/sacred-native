@@ -1,0 +1,13 @@
+# Escape skips the Ascaron movie, a left click skips the OEM movie, and the game still reaches the main menu.
+frames 60
+key Escape down
+sleep 200
+key Escape up
+frames 80
+move 500 400
+down 1
+sleep 200
+up 1
+frames 700
+capture menu-after-skips
+frames 10

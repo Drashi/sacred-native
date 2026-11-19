@@ -1,0 +1,22 @@
+# Keyboard selection on the main menu: Down moves the selected item, Up moves it back.
+frames 600
+move 700 100
+frames 100
+capture keys-start
+frames 4
+key Down down
+frames 3
+key Down up
+frames 100
+key Down down
+frames 3
+key Down up
+frames 150
+capture keys-down-down
+frames 4
+key Up down
+frames 3
+key Up up
+frames 150
+capture keys-up
+frames 4

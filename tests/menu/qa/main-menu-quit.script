@@ -1,0 +1,10 @@
+# Clicking Quit ends the process cleanly through the original exit path.
+frames 600
+move 510 512
+frames 200
+capture before-quit
+frames 4
+down 1
+frames 3
+up 1
+frames 600

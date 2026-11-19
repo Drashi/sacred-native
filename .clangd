@@ -1,0 +1,6 @@
+# compile_commands.json at the repo root is a local symlink to a configured build (CMAKE_EXPORT_COMPILE_COMMANDS=ON).
+# The generated guest shards under build/ are huge: keep them out of the background index.
+If:
+  PathMatch: build/.*
+Index:
+  Background: Skip

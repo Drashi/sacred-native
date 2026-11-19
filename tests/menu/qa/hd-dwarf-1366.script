@@ -1,0 +1,38 @@
+# HD regression, 1366x768 (HD_WIDTH/HD_HEIGHT in Settings.cfg): same moments as hd-dwarf-1024.script; the main menu and the character select are presented as centred 1024x768 insets, so every click is its 1024 position + 171 px.
+frames 600
+move 681 288
+frames 100
+down 1
+frames 3
+up 1
+frames 400
+capture 01-charselect
+frames 4
+move 701 430
+frames 100
+move 701 430
+frames 100
+down 1
+frames 3
+up 1
+frames 200
+capture 02-class-selected
+frames 4
+move 761 714
+frames 100
+down 1
+frames 3
+up 1
+waitmark treppe.bin 4000
+waitmark wea.bin 1500
+frames 150
+capture 03-world-start
+frames 4
+dismiss 12 20
+frames 60
+dismiss 12 20
+frames 60
+move 1340 10
+frames 120
+capture 04-world-idle
+frames 4

@@ -1,0 +1,9 @@
+# RVAs of stored code pointers (data slots / immediates) found by tools/lift/sweep_code_pointers.py.
+# Read by the AdmitObservedEntry `entries-file:` spec; Ghidra drops entries it cannot decode.
+0x5943e  # imm 0x1001a19c
+0x59488  # imm 0x1001aa98
+0x5aea8  # imm 0x100408a8
+0x5aed2  # imm 0x10040a58
+0x5aefc  # imm 0x10040c18
+0x5af26  # imm 0x10040de8
+0x5b2d9  # imm 0x100432e8

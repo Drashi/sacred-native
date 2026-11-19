@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# Launcher for the native Sacred Gold port (shipped at the bundle root next to `sacred-native` and `lib/`).
+set -uo pipefail
+# Resolve symlinks without readlink -f (absent before macOS 12.3).
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+    link="$(readlink "$self")"
+    case "$link" in /*) self="$link" ;; *) self="$(dirname "$self")/$link" ;; esac
+done
+
+here="$(cd "$(dirname "$self")" && pwd)"
+os="$(uname -s)"
+# Same directory as SDL_GetPrefPath("Sacred Native", "Sacred Gold") in the engine.
+if [ "$os" = Darwin ]; then default_profile="$HOME/Library/Application Support/Sacred Native/Sacred Gold"
+else default_profile="${XDG_DATA_HOME:-$HOME/.local/share}/Sacred Native/Sacred Gold"; fi
+
+usage() {
+cat <<'EOF'
+Usage: sacred-gold [--profile DIR] [--fullscreen|--windowed] [GAME_DIR] [-- EXTRA sacred-native OPTIONS...]
+
+GAME_DIR is your existing Sacred Gold installation (the directory that contains Sacred.exe).
+It is only ever read. When omitted, the launcher uses, in order:
+  $SACRED_GOLD_DIR, the path used last time (stored in the profile), then common locations
+  (Linux: ~/GOG Games, ~/Games, Wine drive_c, Steam, /opt, ...;
+   macOS: ~/Games, ~/Applications, /Applications, CrossOver bottles' drive_c, ...).
+
+Profile (settings and saves, never inside the installation):
+  default  Linux: ${XDG_DATA_HOME:-~/.local/share}/Sacred Native/Sacred Gold
+           macOS: ~/Library/Application Support/Sacred Native/Sacred Gold
+  override --profile DIR or $SACRED_PROFILE
+A default Settings.cfg (windowed, SOUND 1, SHOWMOVIE 1) is created there on first run.
+Fullscreen: --fullscreen (remembered until --windowed), FULLSCREEN : 1 in Settings.cfg (converted to --fullscreen),
+  SACRED_FULLSCREEN=1 for one run, or Alt/Option+Enter in the game window.
+Log file: <profile>/sacred-native.log (the previous run is kept as sacred-native.log.1).
+EOF
+}
+
+profile="${SACRED_PROFILE:-$default_profile}"
+game=""
+display_mode=""
+extra=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        --profile) [ $# -ge 2 ] || { echo "sacred-gold: --profile needs a directory" >&2; exit 2; }
+                   profile="$2"; shift 2 ;;
+        --fullscreen) display_mode=fullscreen; shift ;;
+        --windowed) display_mode=windowed; shift ;;
+        --) shift; extra=("$@"); break ;;
+        -*) echo "sacred-gold: unknown option $1 (see --help; engine options go after --)" >&2; exit 2 ;;
+        *) if [ -z "$game" ]; then game="$1"; shift
+           else echo "sacred-gold: unexpected argument $1" >&2; exit 2; fi ;;
+    esac
+done
+
+is_install() { [ -n "${1:-}" ] && [ -f "$1/Sacred.exe" ]; }
+
+if [ -n "$game" ]; then
+    if ! is_install "$game"; then
+        echo "sacred-gold: '$game' is not a Sacred Gold installation (no Sacred.exe)." >&2
+        exit 1
+    fi
+else
+    candidates=()
+    [ -n "${SACRED_GOLD_DIR:-}" ] && candidates+=("$SACRED_GOLD_DIR")
+    [ -f "$profile/game-path" ] && candidates+=("$(head -n1 "$profile/game-path")")
+    if [ "$os" = Darwin ]; then
+        candidates+=("$HOME/Games/Sacred Gold" "$HOME/Games/sacred-gold" "$HOME/Applications/Sacred Gold"
+            "/Applications/Sacred Gold" "$HOME/GOG Games/Sacred Gold")
+        for bottle in "$HOME/Library/Application Support/CrossOver/Bottles"/*/drive_c; do
+            [ -d "$bottle" ] && candidates+=("$bottle/GOG Games/Sacred Gold"
+                "$bottle/Program Files (x86)/GOG Galaxy/Games/Sacred Gold"
+                "$bottle/Program Files/Sacred Gold" "$bottle/Program Files (x86)/Sacred Gold")
+        done
+    else
+        candidates+=("$HOME/GOG Games/Sacred Gold" "$HOME/Games/Sacred Gold" "$HOME/Games/sacred-gold"
+            "$HOME/.wine/drive_c/GOG Games/Sacred Gold" "$HOME/.local/share/Steam/steamapps/common/Sacred Gold"
+            "$HOME/.steam/steam/steamapps/common/Sacred Gold" "/opt/Sacred Gold" "/opt/sacred-gold"
+            "/usr/local/games/Sacred Gold" "/usr/share/games/Sacred Gold")
+    fi
+
+    for candidate in "${candidates[@]}"; do
+        if is_install "$candidate"; then game="$candidate"; break; fi
+    done
+
+    if [ -z "$game" ]; then
+        echo "sacred-gold: no Sacred Gold installation found." >&2
+        echo "Pass the directory that contains Sacred.exe:  sacred-gold /path/to/Sacred\\ Gold" >&2
+        echo "(it is remembered afterwards; or set SACRED_GOLD_DIR). The game data is not part of this download." >&2
+        exit 1
+    fi
+fi
+
+game="$(cd "$game" && pwd)"
+
+mkdir -p "$profile" || { echo "sacred-gold: cannot create profile directory '$profile'" >&2; exit 1; }
+profile="$(cd "$profile" && pwd)"
+case "$profile/" in
+    "$game"/*) echo "sacred-gold: the profile must be outside the installation ('$profile')." >&2; exit 1 ;;
+esac
+
+printf '%s\n' "$game" > "$profile/game-path"
+
+if [ ! -f "$profile/Settings.cfg" ]; then
+    cr=$'\r'
+    tmp="$profile/Settings.cfg.tmp.$$"
+    if [ -f "$game/Settings.cfg" ]; then
+        sed -E -e "s/^FULLSCREEN :[^$cr]*/FULLSCREEN : 0/" -e "s/^SOUND :[^$cr]*/SOUND : 1/" \
+               -e "s/^SHOWMOVIE :[^$cr]*/SHOWMOVIE : 1/" "$game/Settings.cfg" > "$tmp"
+    else
+        printf 'FULLSCREEN : 0\nSOUND : 1\nSHOWMOVIE : 1\nLANGUAGE : US\n' > "$tmp"
+    fi
+
+    mv "$tmp" "$profile/Settings.cfg"
+fi
+
+# The engine has no exclusive DirectDraw fullscreen (Sacred's FULLSCREEN : 1 path ends the game at startup), so the
+# launcher turns that setting into host fullscreen: the game runs windowed and the window covers the display, as with
+# Alt/Option+Enter. The choice is kept in "$profile/fullscreen" because Settings.cfg then reads FULLSCREEN : 0.
+cr=$'\r'
+if grep -Eq "^FULLSCREEN *: *1" "$profile/Settings.cfg"; then
+    sed -E "s/^FULLSCREEN :[^$cr]*/FULLSCREEN : 0/" "$profile/Settings.cfg" > "$profile/Settings.cfg.tmp.$$" &&
+        mv "$profile/Settings.cfg.tmp.$$" "$profile/Settings.cfg"
+    : > "$profile/fullscreen"
+fi
+
+case "$display_mode" in
+    fullscreen) : > "$profile/fullscreen" ;;
+    windowed) rm -f "$profile/fullscreen" ;;
+esac
+
+if [ -z "${SACRED_FULLSCREEN:-}" ] && [ -f "$profile/fullscreen" ]; then export SACRED_FULLSCREEN=1; fi
+
+
+log="$profile/sacred-native.log"
+[ -f "$log" ] && mv -f "$log" "$log.1"
+echo "sacred-gold: installation: $game"
+echo "sacred-gold: profile:      $profile"
+echo "sacred-gold: log:          $log"
+
+# The game code is not part of the download: the first start (and the first after an update) builds the game module
+# from this installation's files with the bundled translator and Python, and the system's C compiler or else the
+# bundled Zig (sacred-launcher shows the same build with a progress bar). An up-to-date module is reused at once.
+given_module=0
+for arg in ${extra[@]+"${extra[@]}"}; do [ "$arg" = --game-module ] && given_module=1; done
+if [ -d "$here/source" ] && [ "$given_module" = 0 ]; then
+    module_dir="$(dirname "$profile")/game-module"
+    echo "sacred-gold: preparing the game code in $module_dir (the first time takes a few minutes)"
+    status_file="$module_dir.status"
+    mkdir -p "$module_dir"
+    { "$here/python/bin/python3" -I "$here/source/tools/launcher/build_game.py" --assets "$game" \
+        --recipe "$here/source/recipe.json.gz" --out "$module_dir" --cc "${CC:-cc}" --cc "'$here/zig/zig' cc"
+      echo $? > "$status_file"; } |
+    while read -r kind rest; do
+        case "$kind" in
+            STEP) echo "sacred-gold: ${rest#* }" ;;
+            PROGRESS) set -- $rest; [ $(( $1 % 200 )) = 0 ] || [ "$1" = "$2" ] && echo "sacred-gold:   $1 / $2" ;;
+            ERROR) echo "sacred-gold: $rest" >&2 ;;
+            DONE) module="$rest" ;;
+        esac
+    done
+
+    [ "$(cat "$status_file" 2>/dev/null)" = 0 ] || { echo "sacred-gold: the game code could not be built" >&2; exit 1; }
+    rm -f "$status_file"
+    if [ "$os" = Darwin ]; then
+        module_file="$module_dir/libsacred_game.dylib"
+    else
+        module_file="$module_dir/libsacred_game.so"
+    fi
+    extra+=(--game-module "$module_file")
+fi
+
+# ${extra[@]+...}: bash 3.2 (macOS /bin/bash) treats an empty array as unset under set -u.
+"$here/sacred-native" --assets "$game" --profile "$profile" ${extra[@]+"${extra[@]}"} > "$log" 2>&1
+rc=$?
+if [ $rc -ne 0 ]; then
+    echo "sacred-gold: sacred-native exited with status $rc; see $log" >&2
+    tail -n 5 "$log" >&2
+fi
+
+exit $rc

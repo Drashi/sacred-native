@@ -217,6 +217,15 @@ const std::vector<Option>& options() {
          {{"", "Original"}, {"2", "2x upscale"}, {"3", "3x upscale"}, {"4", "4x upscale"}},
          {"0", "1"},
          "2"},
+        {"AUTO_PICKUP",
+         Section::gameplay,
+         "Auto pick-up",
+         "The hero picks up the loot lying next to it while standing or walking, without a click. What it takes "
+         "follows the game's own pick-up setting in the in-game Options. Items you drop stay where they are. Single "
+         "player only, and not on horseback.",
+         {{"", "Off"}, {"1", "On"}},
+         {"0"},
+         ""},
     };
     return list;
 }
@@ -239,6 +248,8 @@ const char* section_title(Section section) {
         return "Look";
     case Section::graphics:
         return "Graphics";
+    case Section::gameplay:
+        return "Gameplay";
     }
 
     return "";
@@ -342,6 +353,10 @@ std::string summary(const SettingsFile& settings, const ScreenSize& size, bool f
 
     if (!settings.get("TEXTURE_PACK").empty()) {
         text += ", texture pack";
+    }
+
+    if (choice("AUTO_PICKUP") == 1) {
+        text += ", auto pick-up";
     }
 
     return text;

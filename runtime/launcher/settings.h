@@ -31,7 +31,7 @@ struct Choice {
     std::string label;
 };
 
-enum class Section { display, look, graphics };
+enum class Section { display, look, graphics, gameplay };
 
 // One option of the settings page with fixed choices. Values found in the file that are not among the choices (a
 // hand-edited FPS_LIMIT : 100) are added as an extra choice so that nothing is lost by opening the page.

@@ -226,6 +226,16 @@ const std::vector<Option>& options() {
          {{"", "Off"}, {"1", "On"}},
          {"0"},
          ""},
+        {"GAMEPAD",
+         Section::gameplay,
+         "Controller",
+         "Play with a game controller (Xbox, PlayStation, Switch and others): the left stick walks, A attacks the "
+         "nearest enemy in the stick's direction, X uses the combat art, the other buttons press the game's keys. In "
+         "menus and windows the left stick moves the cursor, A and X click, B is Esc. Mouse and keyboard keep working. "
+         "The bundle's README lists every button.",
+         {{"", "Off"}, {"1", "On"}},
+         {"0"},
+         ""},
     };
     return list;
 }
@@ -357,6 +367,10 @@ std::string summary(const SettingsFile& settings, const ScreenSize& size, bool f
 
     if (choice("AUTO_PICKUP") == 1) {
         text += ", auto pick-up";
+    }
+
+    if (choice("GAMEPAD") == 1) {
+        text += ", controller";
     }
 
     return text;

@@ -2,6 +2,7 @@
 #include "../../platform/movie_pacer.h"
 #include "../../platform/window_host.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <thread>
@@ -9,6 +10,7 @@
 namespace sacred {
 namespace {
 using Clock = std::chrono::steady_clock;
+std::atomic<int> running_movies{0};
 constexpr uint64_t lead_frames = MovieDecoder::audio_rate; // keep one second of audio queued ahead
 constexpr uint64_t chunk_frames = MovieDecoder::audio_rate / 10;
 void put32(std::FILE* file, uint32_t value) {
@@ -18,6 +20,10 @@ void put32(std::FILE* file, uint32_t value) {
 void put16(std::FILE* file, uint16_t value) {
     std::fwrite(&value, 2, 1, file);
 }
+}
+
+bool movie_playing() {
+    return running_movies.load() > 0;
 }
 
 MoviePlayback::~MoviePlayback() {
@@ -52,6 +58,7 @@ void MoviePlayback::run() {
     }
 
     running_ = true;
+    ++running_movies;
     started_ = Clock::now();
     const auto& info = decoder_->info();
     energy_ = 0;
@@ -112,6 +119,7 @@ void MoviePlayback::stop() {
     }
 
     running_ = false;
+    --running_movies;
     uint64_t mixer_loud = 0;
     if (mixer_handle_) {
         mixer_loud = mixer_->frames_nonsilent() - mixer_nonsilent_start_;

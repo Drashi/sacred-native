@@ -3,6 +3,7 @@
 #include "profiler.h"
 #include "resolution.h"
 #include "auto_pickup.h"
+#include "gamepad_play.h"
 #include <cstdlib>
 #include <cstring>
 #include <chrono>
@@ -430,6 +431,21 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
             }
         }
 
+        // GAMEPAD : 1 in Settings.cfg (or SACRED_GAMEPAD=1, which wins): play with a game controller (gamepad_play.h).
+        std::unique_ptr<sacred::GamepadPlay> gamepad;
+        if (host) {
+            const char* env = std::getenv("SACRED_GAMEPAD");
+            const std::string value =
+                env ? std::string(env) : sacred::read_setting(profile + "/Settings.cfg", "GAMEPAD");
+            if (!value.empty() && value != "0") {
+                host->enable_gamepad();
+                gamepad = std::make_unique<sacred::GamepadPlay>(*host, event, value == "trace",
+                                                                resolution.enabled ? resolution.width : 1024,
+                                                                resolution.enabled ? resolution.height : 768);
+                event("GAMEPAD on");
+            }
+        }
+
         if (!sacred::has_wait_retrace(profile + "/Settings.cfg")) {
             draw.frame_vblank_default_off = true;
             event("WAITRETRACE default=0");
@@ -442,8 +458,11 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
             }
 
             draw.inset_word = sacred::resolution_inset_word();
-            draw.observe_inset = [&menu](bool on, const sacred::InsetView& view) {
+            draw.observe_inset = [&menu, &gamepad](bool on, const sacred::InsetView& view) {
                 menu.set_pointer_inset(on, view);
+                if (gamepad) {
+                    gamepad->set_inset(on, view);
+                }
             };
             if (const char* trace = std::getenv("SACRED_INSET_TRACE"); trace && *trace && *trace != '0') {
                 draw.trace_present = [&event](const std::string& line) {
@@ -639,6 +658,10 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
 
             if (auto_pickup) {
                 auto_pickup->present(sacred::active_control());
+            }
+
+            if (gamepad) {
+                gamepad->present(sacred::active_control());
             }
 
             if (fps_limit != sacred::fps_limit_default) {

@@ -38,6 +38,26 @@ locations (`~/Games`, `~/Applications`, `/Applications`, CrossOver bottles' `dri
   standing or walking, without a click. What it takes follows the game's own pick-up setting in the in-game
   Options (gold, gold and uniques, or everything). Items you drop stay where they are; an item that does not fit
   is tried again once the hero has walked away from it. Single player only, and not on horseback.
+* `GAMEPAD : 1` / `SACRED_GAMEPAD=1` (off by default): play with a game controller (Xbox, PlayStation, Switch and
+  others SDL knows). Mouse and keyboard keep working beside it. Buttons are named as on an Xbox pad; "LT +" means
+  with the left trigger held.
+  * In the world: the **left stick** walks toward where it points. **A** attacks the nearest enemy in the stick's
+    direction (the right stick's when it is pushed) while held and goes on to the next one; with no enemy near it
+    uses, opens, picks up or talks to the nearest thing, and with nothing near it attacks in place. **X** casts the
+    active combat art at the nearest enemy. **Y, B, RB, RT**: combat art slots 1-4 (LT + A: slot 5). LT + X, Y, B,
+    RB, RT: weapon slots 1-5. **D-pad**: healing potion (up), heal hirelings (down), antidote (left), concentration
+    (right); LT + up / down: Undead Death / Mentor potion, LT + left / right: zoom out / in. **LB** held: stand
+    still. **Start**: game menu (LT: options). **Back**: inventory (LT: world map). **L3** held: show item names
+    (LT + L3: collect all). **R3**: overview map on / off. **LT + R3**: a free cursor in the world on / off.
+  * Menus, the game menu, message boxes, the portal list and NPC dialogs: the **D-pad** or the **left stick** jumps
+    between the entries and the cursor starts on the first one (a message box's OK, the first town); **A** chooses,
+    **B** goes back (Esc), the right stick moves the cursor freely. **Start** is Enter in the start menu and closes
+    the game menu.
+  * Windows in game (inventory, traders, chests, maps): the **left stick** moves the cursor, the **D-pad** moves it
+    by one inventory cell, **LB / RB** switch the inventory's tabs, **LT / RT** jump between the open windows
+    (backpack, equipment, statistics; each keeps where the cursor was), the right stick scrolls. **A / X** are the
+    left / right mouse button, **B** closes (Esc).
+  * Movies: **A**, **B** or **Start** skips.
 * `LEGACY_UI : 1` in `Settings.cfg` switches to the original Sacred look: its UI skin (bronze frames with vines,
   in the menus and in game), menu art (sunlit gate main menu, character select cave, dwarven hall behind the
   options) and menu music (`MUSIC_MENU.mp3`)

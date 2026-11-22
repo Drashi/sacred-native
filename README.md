@@ -43,7 +43,10 @@ fullscreen at the display's size and refresh rate with sharper rendering and tex
 - **Original Sacred look**: the classic UI skin, menu art and menu music that Sacred Gold ships but does not use.
 
 The **Gameplay** section holds **Auto pick-up** (off by default): the hero picks up the loot it walks past, filtered
-by the game's own pick-up setting from the in-game Options.
+by the game's own pick-up setting from the in-game Options. **Controller** (off by default) plays the game with a
+gamepad: the left stick walks, A attacks the nearest enemy in the stick's direction, the other buttons are combat
+arts, potions and windows; in menus, message boxes and NPC dialogs the D-pad jumps between the entries, and the
+inventory's tabs and windows have buttons of their own.
 
 All options are keys in the profile's `Settings.cfg` too; the bundle's `README.md` lists them.
 

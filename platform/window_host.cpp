@@ -875,6 +875,13 @@ void WindowHost::pump(const SDL_Event* initial) {
             }
 
             continue;
+        case SDL_CONTROLLERDEVICEADDED:
+        case SDL_CONTROLLERDEVICEREMOVED:
+        case SDL_CONTROLLERAXISMOTION:
+        case SDL_CONTROLLERBUTTONDOWN:
+        case SDL_CONTROLLERBUTTONUP:
+            gamepad_event(input);
+            continue;
         default:
             continue; // Backend notifications without a registered guest consumer.
         }
@@ -1181,6 +1188,252 @@ void WindowHost::set_cursor_pos(int x, int y) {
     }
 }
 
+void WindowHost::enable_gamepad() {
+    submit([&] {
+        video();
+        if (gamepad_enabled_) {
+            return;
+        }
+
+        // SDL reports the controllers present at start as added devices; they are opened there.
+        if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER)) {
+            std::fprintf(stderr, "GAMEPAD unavailable: %s\n", SDL_GetError());
+            return;
+        }
+
+        gamepad_enabled_ = true;
+        std::fprintf(stderr, "GAMEPAD on joysticks=%d\n", SDL_NumJoysticks());
+    });
+}
+
+GamepadState WindowHost::gamepad_state() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return gamepad_;
+}
+
+void WindowHost::gamepad_event(const SDL_Event& input) {
+    if (!gamepad_enabled_) {
+        return;
+    }
+
+    if (input.type == SDL_CONTROLLERDEVICEADDED) {
+        if (SDL_GameController* controller = SDL_GameControllerOpen(input.cdevice.which)) {
+            const char* name = SDL_GameControllerName(controller);
+            std::fprintf(stderr, "GAMEPAD added \"%s\"\n", name ? name : "?");
+        }
+
+        return;
+    }
+
+    const SDL_JoystickID id = input.type == SDL_CONTROLLERDEVICEREMOVED ? input.cdevice.which
+                              : input.type == SDL_CONTROLLERAXISMOTION  ? input.caxis.which
+                                                                        : input.cbutton.which;
+    SDL_GameController* controller = SDL_GameControllerFromInstanceID(id);
+    if (input.type == SDL_CONTROLLERDEVICEREMOVED) {
+        if (controller) {
+            SDL_GameControllerClose(controller);
+        }
+
+        std::fprintf(stderr, "GAMEPAD removed\n");
+        if (id == gamepad_active_) {
+            gamepad_active_ = -1;
+            std::lock_guard<std::mutex> lock(mutex_);
+            gamepad_ = {};
+        }
+
+        return;
+    }
+
+    if (!controller) {
+        return;
+    }
+
+    // A stick resting slightly off its centre must not take over from the controller in use.
+    if (id != gamepad_active_ && input.type == SDL_CONTROLLERAXISMOTION && std::abs(int(input.caxis.value)) < 12000) {
+        return;
+    }
+
+    gamepad_active_ = id;
+    auto axis = [&](SDL_GameControllerAxis which) {
+        return std::clamp(float(SDL_GameControllerGetAxis(controller, which)) / 32767.0f, -1.0f, 1.0f);
+    };
+    GamepadState state;
+    state.connected = true;
+    state.lx = axis(SDL_CONTROLLER_AXIS_LEFTX);
+    state.ly = axis(SDL_CONTROLLER_AXIS_LEFTY);
+    state.rx = axis(SDL_CONTROLLER_AXIS_RIGHTX);
+    state.ry = axis(SDL_CONTROLLER_AXIS_RIGHTY);
+    state.lt = std::max(0.0f, axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT));
+    state.rt = std::max(0.0f, axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT));
+    static constexpr std::pair<SDL_GameControllerButton, uint32_t> buttons[] = {
+        {SDL_CONTROLLER_BUTTON_A, pad::A},
+        {SDL_CONTROLLER_BUTTON_B, pad::B},
+        {SDL_CONTROLLER_BUTTON_X, pad::X},
+        {SDL_CONTROLLER_BUTTON_Y, pad::Y},
+        {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, pad::LB},
+        {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, pad::RB},
+        {SDL_CONTROLLER_BUTTON_BACK, pad::Back},
+        {SDL_CONTROLLER_BUTTON_START, pad::Start},
+        {SDL_CONTROLLER_BUTTON_LEFTSTICK, pad::L3},
+        {SDL_CONTROLLER_BUTTON_RIGHTSTICK, pad::R3},
+        {SDL_CONTROLLER_BUTTON_DPAD_UP, pad::Up},
+        {SDL_CONTROLLER_BUTTON_DPAD_DOWN, pad::Down},
+        {SDL_CONTROLLER_BUTTON_DPAD_LEFT, pad::Left},
+        {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, pad::Right},
+    };
+    for (const auto& [button, bit] : buttons) {
+        if (SDL_GameControllerGetButton(controller, button)) {
+            state.buttons |= bit;
+        }
+    }
+
+    if (state.lt > pad::trigger_press) {
+        state.buttons |= pad::LT;
+    }
+
+    if (state.rt > pad::trigger_press) {
+        state.buttons |= pad::RT;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    gamepad_ = state;
+}
+
+void WindowHost::deliver_pad(HostEvent event) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        event.window = input_.window;
+    }
+
+    if (!event.window) {
+        event.window = first_window();
+        if (!event.window) {
+            return;
+        }
+    }
+
+    event.time = uint32_t(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+    std::function<void()> notify;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        VirtualCursor& cursor = cursors_[event.window];
+        switch (event.kind) {
+        case HostEventKind::MouseMove:
+            cursor.set(event.x, event.y);
+            event.x = cursor.x();
+            event.y = cursor.y();
+            input_.x = event.x;
+            input_.y = event.y;
+            break;
+        case HostEventKind::MouseDown:
+        case HostEventKind::MouseUp: {
+            const uint32_t bit = event.value == 1 ? 1 : event.value == 3 ? 2 : 4;
+            event.x = input_.x;
+            event.y = input_.y;
+            if (event.kind == HostEventKind::MouseDown) {
+                input_.buttons |= bit;
+            } else {
+                input_.buttons &= ~bit;
+            }
+
+            break;
+        }
+        case HostEventKind::KeyDown:
+            input_.keys.set(size_t(event.value & 0xff));
+            break;
+        case HostEventKind::KeyUp:
+            input_.keys.reset(size_t(event.value & 0xff));
+            break;
+        default:
+            break;
+        }
+
+        input_.window = event.window;
+        event.buttons = input_.buttons;
+        if (event.kind == HostEventKind::MouseMove && !events_.empty() &&
+            events_.back().kind == HostEventKind::MouseMove && events_.back().window == event.window) {
+            events_.back() = std::move(event);
+        } else {
+            drop_oldest_if_full();
+            events_.push_back(std::move(event));
+        }
+
+        notify = notifier_;
+    }
+
+    if (notify) {
+        notify();
+    }
+}
+
+void WindowHost::pad_pointer(int x, int y) {
+    HostEvent event{HostEventKind::MouseMove, 0, 0, x, y, 0, {}};
+    deliver_pad(std::move(event));
+}
+
+void WindowHost::pad_button(int button, bool down) {
+    HostEvent event{down ? HostEventKind::MouseDown : HostEventKind::MouseUp, 0, 0, 0, 0, button, {}};
+    deliver_pad(std::move(event));
+}
+
+void WindowHost::pad_key(int key, bool down) {
+    HostEvent event{down ? HostEventKind::KeyDown : HostEventKind::KeyUp, 0, 0, 0, 0, key, {}};
+    deliver_pad(std::move(event));
+    // A key that types a character gives SDL text input too, as the keyboard does: the game takes letters, digits and
+    // the space bar (its potion and window keys among them) from WM_CHAR, which only that text produces.
+    if (down && (key == ' ' || (key >= '0' && key <= '9') || (key >= 'A' && key <= 'Z'))) {
+        HostEvent text{
+            HostEventKind::Text, 0, 0, 0, 0, 0, std::string(1, char(key >= 'A' && key <= 'Z' ? key + 32 : key))};
+        deliver_pad(std::move(text));
+    }
+}
+
+void WindowHost::pad_wheel(int notches) {
+    HostEvent event{HostEventKind::Wheel, 0, 0, 0, notches, 0, {}};
+    deliver_pad(std::move(event));
+}
+
+void WindowHost::pad_key_tap(int key, int hold_ms) {
+    pad_key(key, true);
+    std::lock_guard<std::mutex> lock(mutex_);
+    taps_.emplace_back(key, std::chrono::steady_clock::now() + std::chrono::milliseconds(hold_ms));
+}
+
+void WindowHost::release_taps() {
+    std::function<void()> notify;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        for (auto tap = taps_.begin(); tap != taps_.end();) {
+            if (tap->second > now || !input_.window) {
+                ++tap;
+                continue;
+            }
+
+            input_.keys.reset(size_t(tap->first & 0xff));
+            HostEvent event{
+                HostEventKind::KeyUp,
+                input_.window,
+                uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()),
+                0,
+                0,
+                tap->first,
+                {},
+                input_.buttons};
+            drop_oldest_if_full();
+            events_.push_back(std::move(event));
+            notify = notifier_;
+            tap = taps_.erase(tap);
+        }
+    }
+
+    if (notify) {
+        notify();
+    }
+}
+
 void WindowHost::drop_oldest_if_full() {
     // Caller holds mutex_. A stalled guest must not turn host input into a fatal error: drop the oldest event.
     if (events_.size() < 256) {
@@ -1239,6 +1492,7 @@ void WindowHost::loop() {
 void WindowHost::run_loop() {
     bool burst = false;
     for (;;) {
+        release_taps();
         Command command;
         bool video;
         {

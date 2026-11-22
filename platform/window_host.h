@@ -1,4 +1,5 @@
 #pragma once
+#include "gamepad.h"
 #include "renderer.h"
 #include "virtual_cursor.h"
 #include <atomic>
@@ -141,6 +142,20 @@ public:
     std::pair<int, int> global_mouse();
     // Moves the guest-visible cursor (screen coordinates) without warping the host pointer.
     void set_cursor_pos(int x, int y);
+    // Game controllers (GAMEPAD : 1): opens the controllers and keeps the state of the one that last gave input.
+    // Without this call the controller subsystem is never started.
+    void enable_gamepad();
+    GamepadState gamepad_state();
+    // Input a controller stands in for, delivered to the guest like the mouse's and the keyboard's (the window that
+    // last saw input): the guest cursor moves to (x, y) in client coordinates; a button (1 left, 3 right) or a key
+    // (Windows virtual-key code) goes down or up at the cursor; the wheel turns by whole notches.
+    void pad_pointer(int x, int y);
+    void pad_button(int button, bool down);
+    void pad_key(int key, bool down);
+    void pad_wheel(int notches);
+    // A key pressed now and released `hold_ms` later by the host loop, whatever the guest does meanwhile: the movie
+    // player waits for Esc to come up again without presenting a frame (Sacred.exe 0x6a147c).
+    void pad_key_tap(int key, int hold_ms);
     std::string start_audio();
     void stop_audio();
     uint32_t open_audio(uint32_t frequency, std::string& error);
@@ -192,6 +207,16 @@ private:
     std::function<void()> notifier_;
     std::function<bool(const HostEvent&)> input_observer_;
     void pump(const SDL_Event* initial = nullptr);
+    // SDL thread: a controller event (added, removed, axis, button); updates gamepad_.
+    void gamepad_event(const SDL_Event& input);
+    // Hands a controller's stand-in event to the guest queue.
+    void deliver_pad(HostEvent event);
+    bool gamepad_enabled_ = false; // SDL thread
+    int32_t gamepad_active_ = -1;  // SDL thread: instance id of the controller that last gave input
+    GamepadState gamepad_;         // guarded by mutex_
+    // Taps (pad_key_tap) still down: key and release time, guarded by mutex_; released on the SDL thread.
+    std::vector<std::pair<int, std::chrono::steady_clock::time_point>> taps_;
+    void release_taps();
     void admit(std::unique_lock<std::mutex>& lock);
 };
 }

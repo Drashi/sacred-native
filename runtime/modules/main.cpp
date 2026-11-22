@@ -2,6 +2,7 @@
 #include "../granny/install.h"
 #include "profiler.h"
 #include "resolution.h"
+#include "auto_pickup.h"
 #include <cstdlib>
 #include <cstring>
 #include <chrono>
@@ -416,6 +417,19 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
             }
         }
 
+        // AUTO_PICKUP : 1 in Settings.cfg (or SACRED_AUTO_PICKUP=1, which wins): the hero picks up the loot next to it
+        // that the game's own pick-up filter accepts (auto_pickup.h).
+        std::unique_ptr<sacred::AutoPickup> auto_pickup;
+        {
+            const char* env = std::getenv("SACRED_AUTO_PICKUP");
+            const std::string value =
+                env ? std::string(env) : sacred::read_setting(profile + "/Settings.cfg", "AUTO_PICKUP");
+            if (!value.empty() && value != "0") {
+                auto_pickup = std::make_unique<sacred::AutoPickup>(event, value == "trace");
+                event("AUTO_PICKUP on");
+            }
+        }
+
         if (!sacred::has_wait_retrace(profile + "/Settings.cfg")) {
             draw.frame_vblank_default_off = true;
             event("WAITRETRACE default=0");
@@ -621,6 +635,10 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
                               << '\n';
                 }
 #endif
+            }
+
+            if (auto_pickup) {
+                auto_pickup->present(sacred::active_control());
             }
 
             if (fps_limit != sacred::fps_limit_default) {

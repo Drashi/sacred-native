@@ -42,6 +42,9 @@ fullscreen at the display's size and refresh rate with sharper rendering and tex
 - **Frame rate limit** up to 240 FPS, or the display's refresh rate. Movement and game logic keep their speed.
 - **Original Sacred look**: the classic UI skin, menu art and menu music that Sacred Gold ships but does not use.
 
+The **Gameplay** section holds **Auto pick-up** (off by default): the hero picks up the loot it walks past, filtered
+by the game's own pick-up setting from the in-game Options.
+
 All options are keys in the profile's `Settings.cfg` too; the bundle's `README.md` lists them.
 
 ## Building from source

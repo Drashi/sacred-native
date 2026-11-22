@@ -36,6 +36,10 @@ locations (`~/GOG Games`, `~/Games`, Wine `drive_c`, Steam, `/opt`), and otherwi
   in `Settings.cfg` is converted to `--fullscreen`: the engine has no exclusive DirectDraw fullscreen, so the game runs
   windowed in a window that covers the display. Without `HD_WIDTH`/`HD_HEIGHT` a fullscreen start sets the game
   screen to the display's size (`SACRED_HD_AUTO=0` keeps 1024x768).
+* `AUTO_PICKUP : 1` / `SACRED_AUTO_PICKUP=1` (off by default): the hero picks up the loot lying next to it while
+  standing or walking, without a click. What it takes follows the game's own pick-up setting in the in-game
+  Options (gold, gold and uniques, or everything). Items you drop stay where they are; an item that does not fit
+  is tried again once the hero has walked away from it. Single player only, and not on horseback.
 * `LEGACY_UI : 1` in `Settings.cfg` switches to the original Sacred look: its UI skin (bronze frames with vines,
   in the menus and in game), menu art (sunlit gate main menu, character select cave, dwarven hall behind the
   options) and menu music (`MUSIC_MENU.mp3`)

@@ -836,6 +836,8 @@ int main(int, char** argv) {
                                     scale.index_of(choices.values["RENDER_SCALE"]) == 0;
                 option_row("TEXTURE_UPSCALE", hidden ? "Set the render scale to 2x or more to see them." : "");
             }
+            heading(section_title(Section::gameplay));
+            option_row("AUTO_PICKUP");
             content_height = y + scroll - list.y;
             SDL_RenderSetClipRect(renderer, nullptr);
             ui->clip = {0, 0, W, H};

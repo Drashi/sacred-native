@@ -177,6 +177,17 @@ void Menu::translate_events() {
                          int(event.kind), window, event.x, event.y, event.value, messages_.size());
         }
 
+        // A wheel event carries its notches in y, not a position: it happens where the pointer is (WM_MOUSEWHEEL's
+        // lParam is the cursor's position), and the notches must not go through the inset's scaling, which turned a
+        // notch towards the user into 0 in HD mode.
+        int notches = 0;
+        if (event.kind == HostEventKind::Wheel) {
+            notches = event.y;
+            const HostInputState input = host_->input_state();
+            event.x = input.x;
+            event.y = input.y;
+        }
+
         if (event.kind == HostEventKind::MouseMove || event.kind == HostEventKind::MouseDown ||
             event.kind == HostEventKind::MouseUp || event.kind == HostEventKind::Wheel) {
             to_inset(event.x, event.y);
@@ -205,7 +216,7 @@ void Menu::translate_events() {
             break;
         }
         case HostEventKind::Wheel:
-            post(wm_mousewheel, uint32_t(int16_t(event.y * 120)) << 16, position);
+            post(wm_mousewheel, uint32_t(int16_t(notches * 120)) << 16, position);
             break;
         case HostEventKind::KeyDown:
         case HostEventKind::KeyUp: {

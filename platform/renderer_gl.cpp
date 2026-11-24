@@ -203,6 +203,49 @@ class GlRenderer final : public Renderer {
     GLuint quad_indices_ = 0;
     uint32_t quad_capacity_ = 0;
     bool mesh_applied_ = false, skin_applied_ = false;
+    // DrawBatch::ground_light as a float texture on unit 2, which nothing else uses: row 0 the colour ramp, the four
+    // rows below the lights (x, y, radius), 256 a row.
+    GLuint ground_light_ = 0;
+    bool ground_lit_applied_ = false;
+    std::vector<float> ground_pixels_;
+    void ground_light_upload(const GroundLight& light) {
+        if (light.ramp.size() != 256 * 3 || light.lights.size() % 3 || light.lights.size() > 1024 * 3) {
+            throw GuestFault("invalid ground light");
+        }
+
+        const size_t count = light.lights.size() / 3, rows = 1 + (count + 255) / 256;
+        ground_pixels_.assign(rows * 256 * 4, 0.0f);
+        for (size_t i = 0; i < 256; ++i) {
+            for (size_t c = 0; c < 3; ++c) {
+                ground_pixels_[i * 4 + c] = float(light.ramp[i * 3 + c]);
+            }
+        }
+
+        for (size_t i = 0; i < count; ++i) {
+            for (size_t c = 0; c < 3; ++c) {
+                ground_pixels_[(256 + i) * 4 + c] = float(light.lights[i * 3 + c]);
+            }
+        }
+
+        glActiveTexture(GL_TEXTURE2);
+        if (!ground_light_) {
+            glGenTextures(1, &ground_light_);
+            glBindTexture(GL_TEXTURE_2D, ground_light_);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 256, 5, 0, GL_RGBA, GL_FLOAT, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        }
+
+        glBindTexture(GL_TEXTURE_2D, ground_light_);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, GLsizei(rows), GL_RGBA, GL_FLOAT, ground_pixels_.data());
+        glActiveTexture(GL_TEXTURE0);
+        applied_.unit = GL_TEXTURE0;
+    }
+
     void quad_index_room(uint32_t quads) {
         if (quads <= quad_capacity_) {
             return;
@@ -471,6 +514,10 @@ public:
         glDeleteTextures(1, &staging_texture_);
         glDeleteFramebuffers(1, &staging_framebuffer_);
         glDeleteProgram(program_);
+        if (ground_light_) {
+            glDeleteTextures(1, &ground_light_);
+        }
+
         glDeleteProgram(resample_program_);
         glDeleteVertexArrays(1, &resample_vao_);
         glDeleteSamplers(1, &resample_sampler_);
@@ -880,6 +927,7 @@ public:
             glUseProgram(program_);
             integer("texture0", 0);
             integer("texture1", 1);
+            integer("groundLight", 2);
             glActiveTexture(GL_TEXTURE0);
             applied_.unit = GL_TEXTURE0;
         }
@@ -1252,7 +1300,12 @@ public:
         const GLenum modes[] = {GL_POINTS, GL_LINES, GL_LINE_STRIP, GL_TRIANGLES, GL_TRIANGLE_STRIP, GL_TRIANGLE_FAN};
         const RenderState* state = nullptr;
         const DrawItem* previous = nullptr;
-        GLuint bound_vao = vao_; // ground meshes keep theirs bound across consecutive mesh draws
+        GLuint bound_vao = vao_;  // ground meshes keep theirs bound across consecutive mesh draws
+        bool ground_sent = false; // this batch's ground light is in the uniforms
+        if (batch.ground_light.on) {
+            ground_light_upload(batch.ground_light);
+        }
+
         try {
             for (const auto& item : batch.items) {
                 if (item.mesh) {
@@ -1312,6 +1365,30 @@ public:
                     }
 
                     glUniform4fv(uniform("meshTransform"), 1, item.mesh_transform);
+                    if (item.mesh_lit) {
+                        const GroundLight& light = batch.ground_light;
+                        if (!light.on) {
+                            throw GuestFault("invalid lit mesh draw");
+                        }
+
+                        if (!ground_sent || !ground_lit_applied_) {
+                            glUniform2i(uniform("groundLit"), 1, GLint(light.lights.size() / 3));
+                            ground_lit_applied_ = true;
+                        }
+
+                        if (!ground_sent) {
+                            glUniform4f(uniform("groundView"), light.inverse_zoom, light.zoom, light.origin[0],
+                                        light.origin[1]);
+                            glUniform2iv(uniform("groundCorners[0]"), 4, light.corners);
+                            ground_sent = true;
+                        }
+
+                        glUniform2fv(uniform("groundOffset"), 1, item.mesh_light);
+                    } else if (ground_lit_applied_) {
+                        glUniform2i(uniform("groundLit"), 0, 0);
+                        ground_lit_applied_ = false;
+                    }
+
                     if (bound_vao != arena_vao_) {
                         bound_vao = arena_vao_;
                         glBindVertexArray(bound_vao);

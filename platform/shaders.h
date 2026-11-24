@@ -15,6 +15,11 @@ uniform float pixelBias;
 uniform int transformed, lighting, colorVertex, hasDiffuse, hasSpecular;
 uniform int meshOn;
 uniform vec4 meshTransform;
+uniform ivec2 groundLit;
+uniform vec4 groundView;
+uniform vec2 groundOffset;
+uniform ivec2 groundCorners[4];
+uniform sampler2D groundLight;
 uniform int skinOn, skinNormalize, skinColorOn;
 uniform vec4 skinColor;
 uniform vec4 bones[192];
@@ -36,6 +41,26 @@ vec4 materialColor(int source, vec4 fallback) {
     if (colorVertex != 0 && source == 2 && hasSpecular != 0) return specular;
     return fallback;
 }
+// A ground vertex's colour among the world's light sources (GroundLight in renderer.h; the game's 0x41b510 with its
+// one-step inverse square root): row 0 of groundLight is the colour ramp, the rows below hold the lights.
+vec4 groundColor(vec2 screen) {
+    vec2 low=viewport.xy-vec2(128.0), high=viewport.xy+viewport.zw+vec2(128.0);
+    if (screen.x<low.x || screen.y<low.y || screen.x>high.x || screen.y>high.y) return diffuse;
+    vec2 tile=normal.xy+groundOffset;
+    ivec2 at=ivec2((tile*groundView.x-groundView.zw)*groundView.y)+ivec2(groundView.zw)+groundCorners[int(normal.z+0.5)];
+    int sum=32;
+    for (int i=0;i<groundLit.y && sum<255;++i) {
+        ivec3 light=ivec3(texelFetch(groundLight,ivec2(i&255,1+(i>>8)),0).xyz);
+        ivec2 d=at-light.xy;
+        if (abs(d.y)>light.z) continue;
+        float square=float(d.x*d.x+d.y*d.y);
+        float root=intBitsToFloat(0x5f3759df-(floatBitsToInt(square)>>1));
+        int reach=light.z-int(1.0/(root*(1.5-0.5*square*root*root)));
+        sum+=reach>=224 ? 223 : max(reach,0);
+    }
+    vec3 ramp=texelFetch(groundLight,ivec2(min(sum,255),0),0).xyz;
+    return vec4(floor(floor(diffuse.r*255.0+0.5)*ramp/256.0)/255.0,1.0);
+}
 void main() {
     texcoord[0]=texCount.x==2 ? (texMatrix0*vec4(uv0,1.0,0.0)).xy : uv0;
     texcoord[1]=texCount.y==2 ? (texMatrix1*vec4(uv1,1.0,0.0)).xy : uv1;
@@ -44,7 +69,8 @@ void main() {
         float w=1.0/p.w;
         gl_Position=vec4((2.0*(p.xy+vec2(pixelBias)-viewport.xy)/viewport.zw-1.0)*w,
                          (2.0*p.z-1.0)*w,w);
-        vertexDiffuse=diffuse; vertexSpecular=specular; eyeDepth=p.z;
+        vertexDiffuse=meshOn != 0 && groundLit.x != 0 ? groundColor(p.xy) : diffuse;
+        vertexSpecular=specular; eyeDepth=p.z;
         return;
     }
     vec3 objectPosition=position.xyz, objectNormal=normal;

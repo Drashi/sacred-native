@@ -80,11 +80,28 @@ struct DrawItem {
     float skin_color[4] = {1, 1, 1, 1};
     float mesh_transform[4] = {1, 0, 0, 0};
     std::array<uint8_t, 2> mesh_clamp{};
+    // A mesh item whose diffuse colours the vertex shader takes from DrawBatch::ground_light (see GroundLight);
+    // mesh_light: what turns a vertex's tile position (its normal's x and y) into the row walk's, unscaled.
+    bool mesh_lit = false;
+    float mesh_light[2] = {0, 0};
 };
 struct MeshRange {
     uint32_t mesh = 0, first_quad = 0, quads = 0;
 };
+// The ground lit by the world's light sources (night, caves), as the game's row walk colours each tile corner
+// (runtime/ddraw/ground_mesh.h): the corner's place among the lights is trunc((tile * inverse_zoom - origin) * zoom) +
+// trunc(origin) + corners[corner], the lights within reach add up to an index into `ramp` (256 RGB bytes), and the
+// vertex's own grey scales that colour. A mesh vertex carries its tile's position in its normal's x and y and its
+// corner in the normal's z.
+struct GroundLight {
+    bool on = false;
+    float inverse_zoom = 1, zoom = 1, origin[2] = {0, 0};
+    int32_t corners[8] = {};
+    std::vector<uint8_t> ramp;   // 256 * 3
+    std::vector<int32_t> lights; // x, y, radius each, at most 1024
+};
 struct DrawBatch {
+    GroundLight ground_light; // for the items with mesh_lit
     std::vector<MeshRange> mesh_ranges;
     std::vector<float> skin_rows; // vec4 each
     std::vector<RenderState> states;

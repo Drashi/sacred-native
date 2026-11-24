@@ -1,7 +1,9 @@
 #include "platform/window_host.h"
 #include <SDL.h>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <exception>
 #include <filesystem>
@@ -524,6 +526,97 @@ static void qualify_inset(Renderer& renderer) {
     renderer.destroy_surface(41);
 }
 
+// The lit ground (GroundLight): three mesh quads whose four corners lie 30 units from their tile, so each quad has
+// one colour: within reach of a light, out of every light's reach, and with the sum past the ramp's end.
+static void qualify_ground_light(Renderer& renderer) {
+    renderer.create_surface(60, 64, 64, RenderFormat::Rgba8);
+    GroundLight light;
+    light.on = true;
+    light.inverse_zoom = 0.5f;
+    light.zoom = 2;
+    light.origin[0] = light.origin[1] = 32; // a tile at t is looked up at t - 32
+    const int32_t corners[8] = {-30, 0, 0, -30, 0, 30, 30, 0};
+    std::copy(std::begin(corners), std::end(corners), light.corners);
+    for (int i = 0; i < 256; ++i) {
+        light.ramp.push_back(uint8_t(i));
+        light.ramp.push_back(uint8_t(255 - i));
+        light.ramp.push_back(uint8_t(i / 2));
+    }
+
+    light.lights = {100, 100, 200, 500, 500, 300, 100, 2000, 50};
+    struct Quad {
+        float x, y, tile_x, tile_y, grey;
+        int light, radius; // the light at its tile, -1 for none
+    };
+    const Quad quads[3] = {{4, 4, 132, 132, 1.0f, 0, 200},
+                           {24, 4, 2032, 2032, 128.0f / 255, -1, 0},
+                           {44, 4, 532, 532, 200.0f / 255, 1, 300}};
+    std::vector<RenderVertex> vertices;
+    for (const Quad& quad : quads) {
+        for (int i = 0; i < 4; ++i) {
+            RenderVertex v = vertex(quad.x + float(i % 2) * 16, quad.y + float(i / 2) * 16, 0.5f, 1, 0, 0);
+            v.diffuse[0] = v.diffuse[1] = v.diffuse[2] = quad.grey;
+            v.normal[0] = quad.tile_x;
+            v.normal[1] = quad.tile_y;
+            v.normal[2] = float(i);
+            vertices.push_back(v);
+        }
+    }
+
+    renderer.mesh_write(900, 0, vertices);
+    DrawBatch batch;
+    batch.ground_light = light;
+    batch.states.push_back(state());
+    batch.states[0].transformed = true;
+    DrawItem item;
+    item.target = 60;
+    item.primitive = 4;
+    item.transformed = item.diffuse = true;
+    item.mesh = 900;
+    item.quads = 3;
+    item.mesh_transform[3] = 0.5f;
+    item.mesh_lit = true;
+    batch.items.push_back(item);
+    renderer.clear(60, 1, 0xff000000, 1);
+    renderer.draw(batch);
+    const auto pixels = renderer.read(60);
+    for (const Quad& quad : quads) {
+        int sum = 32;
+        if (quad.light >= 0) {
+            // The game's distance: one Newton step from the bit-trick inverse square root, truncated.
+            const float square = 900;
+            uint32_t bits;
+            std::memcpy(&bits, &square, 4);
+            bits = 0x5f3759df - (bits >> 1);
+            float root;
+            std::memcpy(&root, &bits, 4);
+            const int reach = quad.radius - int(1.0f / (root * (1.5f - 0.5f * square * root * root)));
+            sum += reach >= 224 ? 223 : reach;
+        }
+
+        sum = std::min(sum, 255);
+        const int grey = int(quad.grey * 255 + 0.5f);
+        const int expected[3] = {grey * sum / 256, grey * (255 - sum) / 256, grey * (sum / 2) / 256};
+        const size_t at = (size_t(quad.y + 8) * 64 + size_t(quad.x + 8)) * 4;
+        for (int c = 0; c < 3; ++c) {
+            require(std::abs(int(pixels[at + c]) - expected[c]) <= 1,
+                    "lit ground colour differs from the light lookup");
+        }
+    }
+
+    // The same item unlit keeps its vertex colours.
+    batch.items[0].mesh_lit = false;
+    batch.ground_light = {};
+    renderer.clear(60, 1, 0xff000000, 1);
+    renderer.draw(batch);
+    const auto plain = renderer.read(60);
+    const size_t first = (size_t(12) * 64 + 12) * 4, second = (size_t(12) * 64 + 32) * 4;
+    require(plain[first] == 255 && plain[first + 1] == 255 && plain[second] == 128 && plain[second + 2] == 128,
+            "unlit mesh colours changed");
+    renderer.mesh_destroy(900);
+    renderer.destroy_surface(60);
+}
+
 int main() {
     WindowHost host;
     std::exception_ptr failure;
@@ -533,6 +626,7 @@ int main() {
             host.render(window, qualify);
             host.render(window, qualify_scale);
             host.render(window, qualify_inset);
+            host.render(window, qualify_ground_light);
             host.destroy_window(window);
         } catch (...) {
             failure = std::current_exception();
@@ -553,6 +647,6 @@ int main() {
     }
 
     std::puts("RENDER_PASS rows=1 color=1 transformed=1 depth=1 alpha_test=1 blend=1 teardown=1 scale2=1 replace=1 "
-              "inset=1");
+              "inset=1 ground_light=1");
     return 0;
 }

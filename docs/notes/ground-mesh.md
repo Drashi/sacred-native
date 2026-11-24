@@ -16,7 +16,17 @@ stand-in runs the original through `Control::run_call` with its own code around 
   grouping by texture alone draws two records of one pass on the same tile in the wrong order.
 - The base pass draws in the device state of the first quad the walk added (the cTileRenderer passes between the
   rows may change it); the layer passes mirror `render_state_cache_set(0x2000)` (0x643470) on the device state.
-- The cache is bypassed while the ground is lit through cTileRenderer (a world state flag).
+- Night and caves: the game lights the ground (world state flags 0x20 at +0x10, or the byte at +0x9e0c). The row
+  walk then passes each quad through cTileRenderer (0x61ed70), which colours the four corners with the world state's
+  light lookup (0x41b510): the frame's light sources (`{x, y, radius}` in the walk's unscaled screen space, the list
+  the previous frame collected, swapped in by 0x418fb0) within reach of the corner add `radius - distance` to 32
+  (distance from a one-step fast inverse square root), the sum clamped to 255 indexes a colour ramp, and the tile's
+  own light byte scales that colour. The cached quads carry their tile's place and corner in the otherwise unused
+  normal, and the vertex shader does the lookup from a small float texture (ramp and lights, `GroundLight` in
+  `platform/renderer.h`), so the cache stays on (`SACRED_GROUND_MESH_LIT=0` leaves the lit ground to the game). Night
+  town, zoomed out: about 8500 draw calls and 72 FPS without it, 1900 and 100 with it. cTileRenderer shares corner
+  colours between neighbouring tiles through two row buffers that expect every tile of a row; for the quads that
+  still pass through it (water) the stand-in puts it in the state where it looks every corner up itself.
 - The renderer keeps all mesh vertices in one arena buffer with one vertex array (ranges drawn with a base vertex,
   packed into a new buffer when the top reaches the end). Groups of one pass and place with the same textures, clamp
   and camera transform go out as one `glMultiDrawElementsBaseVertex` (DrawItem::ranges).

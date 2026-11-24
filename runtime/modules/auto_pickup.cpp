@@ -1,4 +1,5 @@
 #include "auto_pickup.h"
+#include "game_frame.h"
 #include "../process/control.h"
 #include <chrono>
 #include <exception>
@@ -8,12 +9,11 @@
 namespace sacred {
 namespace {
 // Sacred.exe 2.28 (the executable the generated code is pinned to).
-constexpr uint32_t object_manager_cell = 0x00ad5c40;   // cObjectManager*; its first word is the map
-constexpr uint32_t item_types_cell = 0x00aab5e4;       // the item type table
-constexpr uint32_t mouse_cell = 0x00cddb5c;            // cMouse*; +0x68 the item on the cursor
-constexpr uint32_t network_cell = 0x0182ebec;          // low byte set in a network game
-constexpr uint32_t render_thread_flags = 0x00ad6ef4;   // bit 0 once the in-game loop runs
-constexpr uint32_t main_loop_flip_return = 0x0060ea8f; // after cEngine_renderThread_run's CALL dxDriver7_flip
+constexpr uint32_t object_manager_cell = 0x00ad5c40; // cObjectManager*; its first word is the map
+constexpr uint32_t item_types_cell = 0x00aab5e4;     // the item type table
+constexpr uint32_t mouse_cell = 0x00cddb5c;          // cMouse*; +0x68 the item on the cursor
+constexpr uint32_t network_cell = 0x0182ebec;        // low byte set in a network game
+constexpr uint32_t render_thread_flags = 0x00ad6ef4; // bit 0 once the in-game loop runs
 
 constexpr uint32_t local_hero = 0x00603e30;      // thiscall (object manager) -> cCreature*
 constexpr uint32_t object_data = 0x005fe000;     // thiscall (object manager, id) -> cObject*
@@ -47,19 +47,6 @@ uint64_t now_ns() {
 uint32_t call(Control& control, uint32_t target, const Signature& signature, const std::vector<uint64_t>& args) {
     return uint32_t(control.invoke(target, signature, args).integer);
 }
-
-// The present runs inside dxDriver7_flip called from the in-game loop: its return address lies a fixed, small
-// distance above the import's arguments (flip's frame is 0x8c bytes). Fades and menus flip from elsewhere.
-bool from_main_loop(Control& control) {
-    const uint32_t esp = control.cpu.r[R_ESP];
-    for (uint32_t offset = 0; offset < 0x100; offset += 4) {
-        if (control.memory.load32(esp + offset) == main_loop_flip_return) {
-            return true;
-        }
-    }
-
-    return false;
-}
 }
 
 void AutoPickup::note(const std::string& line) {
@@ -89,7 +76,7 @@ void AutoPickup::present(Control& control) {
             return;
         }
 
-        if (!from_main_loop(control)) {
+        if (!main_loop_present(control)) {
             note("not the main loop's present");
             return;
         }

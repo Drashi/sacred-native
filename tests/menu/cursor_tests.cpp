@@ -1,7 +1,9 @@
+#include "platform/gamepad.h"
 #include "platform/letterbox.h"
 #include "platform/virtual_cursor.h"
 #include "platform/window_host.h"
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdio>
 #include <exception>
@@ -215,13 +217,24 @@ void math_tests() {
     EXPECT(moved.anchored());
 }
 
+void gamepad_tests() {
+    // Radial deadzone: inside reads 0, the rest rescaled to 0..1 with the direction kept.
+    EXPECT(sacred::dead_zone(0.1f, 0.1f, 0.24f).length == 0.0f);
+    const sacred::Stick full = sacred::dead_zone(1.0f, 0.0f, 0.24f);
+    EXPECT(std::fabs(full.length - 1.0f) < 1e-5f && std::fabs(full.x - 1.0f) < 1e-5f && full.y == 0.0f);
+    const sacred::Stick half = sacred::dead_zone(0.0f, -0.62f, 0.24f);
+    EXPECT(std::fabs(half.length - 0.5f) < 1e-5f && std::fabs(half.y + 0.5f) < 1e-5f && half.x == 0.0f);
+    const sacred::Stick corner = sacred::dead_zone(1.0f, 1.0f, 0.24f);
+    EXPECT(std::fabs(corner.length - 1.0f) < 1e-5f && std::fabs(corner.x - corner.y) < 1e-6f);
+}
+
 struct Mailbox {
     std::mutex mutex;
     std::condition_variable changed;
     bool ready = false;
 };
 
-sacred::HostEvent wait_for_move(sacred::WindowHost& host, Mailbox& box) {
+sacred::HostEvent wait_for(sacred::WindowHost& host, Mailbox& box, sacred::HostEventKind kind) {
     sacred::HostEvent event{};
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     std::unique_lock<std::mutex> lock(box.mutex);
@@ -230,16 +243,20 @@ sacred::HostEvent wait_for_move(sacred::WindowHost& host, Mailbox& box) {
         box.ready = false;
         lock.unlock();
         while (host.take_event(event)) {
-            if (event.kind == sacred::HostEventKind::MouseMove) {
+            if (event.kind == kind) {
                 return event;
             }
         }
 
         lock.lock();
         if (!box.changed.wait_until(lock, deadline, [&] { return box.ready; })) {
-            throw std::runtime_error("no mouse event");
+            throw std::runtime_error("no host event of the expected kind");
         }
     }
+}
+
+sacred::HostEvent wait_for_move(sacred::WindowHost& host, Mailbox& box) {
+    return wait_for(host, box, sacred::HostEventKind::MouseMove);
 }
 
 void host_tests(sacred::WindowHost& host) {
@@ -288,8 +305,36 @@ void host_tests(sacred::WindowHost& host) {
     }
 
     EXPECT(followed > 2000);
-    const sacred::HostInputState state = host.input_state();
+    sacred::HostInputState state = host.input_state();
     EXPECT(state.x == guest_x && state.y == guest_y);
+
+    // A controller's stand-in input: the cursor moves in client coordinates and host motion goes on from there.
+    host.pad_pointer(200, 150);
+    event = wait_for_move(host, box);
+    EXPECT(event.x == 200 && event.y == 150);
+    state = host.input_state();
+    EXPECT(state.x == 200 && state.y == 150);
+    host_x += 3;
+    host.inject_mouse(window, host_x, host_y);
+    event = wait_for_move(host, box);
+    EXPECT(event.x == 203 && event.y == 150);
+    host.pad_button(1, true);
+    event = wait_for(host, box, sacred::HostEventKind::MouseDown);
+    EXPECT(event.value == 1 && event.x == 203 && event.y == 150 && (event.buttons & 1));
+    EXPECT(host.input_state().buttons & 1);
+    host.pad_button(1, false);
+    event = wait_for(host, box, sacred::HostEventKind::MouseUp);
+    EXPECT(event.value == 1 && !(host.input_state().buttons & 1));
+    host.pad_key(32, true);
+    event = wait_for(host, box, sacred::HostEventKind::KeyDown);
+    EXPECT(event.value == 32 && host.input_state().keys.test(32));
+    host.pad_key(32, false);
+    event = wait_for(host, box, sacred::HostEventKind::KeyUp);
+    EXPECT(event.value == 32 && !host.input_state().keys.test(32));
+    host.pad_wheel(-2);
+    event = wait_for(host, box, sacred::HostEventKind::Wheel);
+    EXPECT(event.y == -2);
+    EXPECT(!host.gamepad_state().connected);
     host.destroy_window(window);
 }
 }
@@ -299,6 +344,7 @@ int main() {
     inset_tests();
     canvas_tests();
     math_tests();
+    gamepad_tests();
     sacred::WindowHost host;
     std::exception_ptr failure;
     std::thread guest([&] {

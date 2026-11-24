@@ -838,6 +838,7 @@ int main(int, char** argv) {
             }
             heading(section_title(Section::gameplay));
             option_row("AUTO_PICKUP");
+            option_row("GAMEPAD");
             content_height = y + scroll - list.y;
             SDL_RenderSetClipRect(renderer, nullptr);
             ui->clip = {0, 0, W, H};

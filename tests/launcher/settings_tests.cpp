@@ -43,6 +43,8 @@ int main() {
         check(upscale.index_of("1") == 0 && upscale.index_of("0") == 0, "TEXTURE_UPSCALE 0 and 1 are off");
         const Option& pickup = *find_option("AUTO_PICKUP");
         check(pickup.recommended.empty() && pickup.index_of("0") == 0, "AUTO_PICKUP is off unless chosen");
+        const Option& gamepad = *find_option("GAMEPAD");
+        check(gamepad.recommended.empty() && gamepad.index_of("0") == 0, "GAMEPAD is off unless chosen");
         for (const auto& option : options()) {
             check(!option.choices.empty() && option.choices[0].value.empty(),
                   "every option's first choice is the default");
@@ -84,6 +86,10 @@ int main() {
         check(summary(file, read_screen_size(file, false), true) ==
                   "Fullscreen, 1920 x 1080, 120 FPS, FPS counter, original Sacred look, auto pick-up",
               "summary with auto pick-up");
+        file.set("GAMEPAD", "1");
+        check(summary(file, read_screen_size(file, false), true) ==
+                  "Fullscreen, 1920 x 1080, 120 FPS, FPS counter, original Sacred look, auto pick-up, controller",
+              "summary with controller");
         reset_to_defaults(file);
         check(file.text() == "FPS_LIMIT : auto\r\nRENDER_SCALE : 2\r\nSOUND : 1\r\nTEXTURE_UPSCALE : 2\r\n",
               "defaults: the launcher's recommended values, no screen size, the game's keys kept");

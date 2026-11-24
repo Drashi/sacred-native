@@ -10,6 +10,8 @@
 
 namespace sacred {
 class WindowHost;
+// Whether a movie runs (between STREAMSTATE_RUN and its stop), on any thread.
+bool movie_playing();
 // One playing movie: FFmpeg decoder + SDL audio queue + A/V pacing. The audio device position is the master clock
 // (wall clock when no audio device exists); video frames are held until due and dropped when stale.
 class MoviePlayback {

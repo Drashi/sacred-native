@@ -445,7 +445,8 @@ if(SACRED_BUILD_GAME)
         target_compile_options(sacred_generated PRIVATE -mno-outline)
     endif()
     add_executable(sacred-native runtime/modules/main.cpp runtime/modules/profiler.cpp runtime/modules/machine.cpp
-        runtime/modules/resolution.cpp runtime/modules/auto_pickup.cpp
+        runtime/modules/resolution.cpp runtime/modules/auto_pickup.cpp runtime/modules/gamepad_play.cpp
+        runtime/modules/gamepad_ui.cpp
         runtime/modules/game_module.cpp)
     if(SACRED_QA)
         target_sources(sacred-native PRIVATE runtime/modules/qa_script.cpp runtime/modules/oracle.cpp

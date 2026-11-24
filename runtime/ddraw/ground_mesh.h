@@ -21,7 +21,13 @@ class Control;
 //
 // The game's own ground draws are skipped (the quad batcher's add and setTexture inside the row walk, the layer
 // pass); the walk itself still runs (it collects objects and water tiles). Changed tiles are noticed when the walk
-// visits them and their sector is built again. Off while the ground is lit through cTileRenderer.
+// visits them and their sector is built again.
+//
+// At night and under ground the game lights the ground: renderTileRow passes each quad through cTileRenderer
+// (0x61ed70), which colours its corners with the world state's light lookup (0x41b510: the light sources within
+// reach of the corner add up to an index into a colour ramp, scaled by the tile's own light). The cached quads keep
+// the tile's light and their place; the vertex shader does that lookup from the frame's lights (GroundLight in
+// platform/renderer.h), so the cache stays on.
 class GroundMesh {
 public:
     explicit GroundMesh(DirectDraw& owner);
@@ -75,6 +81,10 @@ private:
     // (cTileRenderer passes between the rows change it before drawTileLayers).
     RenderState base_state_;
     bool base_valid_ = false, base_reported_ = false;
+    // The frame's lights when the game lights the ground (light_.on).
+    GroundLight light_;
+    bool lit_enabled_ = true;
+    void read_light(Control& control, uint32_t world_state, bool second_ramp);
     // Statistics (SACRED_GROUND_MESH_STATS=1), printed every 300 frames.
     bool stats_ = false;
     uint64_t stat_frames_ = 0, stat_draws_ = 0, stat_ranges_ = 0, stat_tiles_ = 0, stat_resets_ = 0;

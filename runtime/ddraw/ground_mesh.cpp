@@ -20,6 +20,16 @@ constexpr uint32_t texture_manager = 0x013e7838;  // cTextureMgr2*
 constexpr uint32_t world_state = 0x00aa4544;      // WorldState*
 constexpr uint32_t render_flags = 0x00cd7a7c;     // RenderFlags* {device, flags}
 constexpr uint32_t one_texture_layers = 0x2000;   // render flag: blend layers with one texture
+constexpr uint32_t tile_renderer = 0x00ad7740;    // cTileRenderer (static instance)
+// WorldState: the lit ground's flags, the frame's light sources ({x, y, radius} in the row walk's unscaled screen
+// space, copied from the list the last frame collected) and the colour ramps (256 dwords per channel, each already
+// shifted to its place in a D3DCOLOR).
+constexpr uint32_t state_flags = 0x10, state_lit = 0x9e0c, state_lights = 0x9e10, state_light_count = 0xce10,
+                   state_ramp = 0xfe18, state_ramp_lit = 0x10a18, state_ramp_lift = 0x12e54;
+constexpr uint32_t max_lights = 1024;
+constexpr uint32_t view_light_corners = 0xab0; // four {x, y} ints: the corners' places around a tile for the lights
+// cTileRenderer: the pass the row walk set (1, 2: which row buffer) and the rows it has seen (0, 1, 2 = more).
+constexpr uint32_t renderer_pass = 0x34, renderer_rows = 0x38;
 // cWorldView
 constexpr uint32_t view_map_data = 0x4, view_tile_uvs = 0x830, view_zoom = 0xb60, view_layered_count = 0x3ff1c,
                    view_passes = 0x97088, view_row_length = 0x96ac8, view_sectors = 0x970b0;
@@ -71,6 +81,9 @@ struct GroundMesh::SectorCache {
 GroundMesh::GroundMesh(DirectDraw& owner) : dd_(owner) {
     const char* stats = std::getenv("SACRED_GROUND_MESH_STATS");
     stats_ = stats && *stats == '1';
+    // SACRED_GROUND_MESH_LIT=0: the lit ground (night, caves) stays with the game's own draws.
+    const char* lit = std::getenv("SACRED_GROUND_MESH_LIT");
+    lit_enabled_ = !lit || *lit != '0';
 }
 
 GroundMesh::~GroundMesh() = default;
@@ -138,13 +151,18 @@ void GroundMesh::begin_frame(Control& control, uint32_t view) {
         std::memcpy(uvs_, uvs, sizeof uvs);
     }
 
-    // The game lights the ground through cTileRenderer in this mode: leave the ground to it.
+    // The game lights the ground through cTileRenderer in these modes (renderTileRow's own test).
+    light_.on = false;
     if (const uint32_t ws = memory.load32(world_state)) {
         uint8_t flags = 0, lit = 0;
-        memory.read(ws + 0x10, &flags, 1);
-        memory.read(ws + 0x9e0c, &lit, 1);
+        memory.read(ws + state_flags, &flags, 1);
+        memory.read(ws + state_lit, &lit, 1);
         if ((flags & 0x20) || lit) {
-            return;
+            if (!lit_enabled_) {
+                return;
+            }
+
+            read_light(control, ws, lit != 0);
         }
     }
 
@@ -161,11 +179,37 @@ void GroundMesh::begin_frame(Control& control, uint32_t view) {
         std::fprintf(
             stderr,
             "GROUND_MESH %zu sectors, %zu groups, %zu quads; per frame %.1f draws of %.1f groups, %.1f tiles built; "
-            "%llu sector restarts\n",
+            "%llu sector restarts; %s\n",
             caches_.size(), groups, quads, stat_draws_ / 300.0, stat_ranges_ / 300.0, stat_tiles_ / 300.0,
-            (unsigned long long)stat_resets_);
+            (unsigned long long)stat_resets_,
+            light_.on ? ("lit by " + std::to_string(light_.lights.size() / 3) + " lights").c_str() : "not lit");
         stat_draws_ = stat_ranges_ = stat_tiles_ = stat_resets_ = 0;
     }
+}
+
+// What the light lookup (0x41b510) reads, for the vertex shader. The lookup tests the lit flag first and takes that
+// mode's ramp; the other mode's ramp may be lifted towards white (state_ramp_lift below 255).
+void GroundMesh::read_light(Control& control, uint32_t ws, bool second_ramp) {
+    auto& memory = control.memory;
+    const uint32_t count = std::min(memory.load32(ws + state_light_count), max_lights);
+    light_.lights.resize(size_t(count) * 3);
+    if (count) {
+        memory.read(ws + state_lights, light_.lights.data(), size_t(count) * 12);
+    }
+
+    uint32_t table[3 * 256];
+    memory.read(ws + (second_ramp ? state_ramp_lit : state_ramp), table, sizeof table);
+    const uint32_t lift = second_ramp ? 0 : 255 - std::min<uint32_t>(memory.load32(ws + state_ramp_lift), 255);
+    light_.ramp.resize(256 * 3);
+    for (int i = 0; i < 256; ++i) {
+        for (int c = 0; c < 3; ++c) {
+            const uint32_t value = (table[c * 256 + i] >> (16 - 8 * c)) & 0xff;
+            light_.ramp[size_t(i) * 3 + c] = uint8_t(std::min<uint32_t>(value + lift, 255));
+        }
+    }
+
+    memory.read(view_ + view_light_corners, light_.corners, sizeof light_.corners);
+    light_.on = true;
 }
 
 bool GroundMesh::sector_id(Control& control, int slot, SectorId& id) {
@@ -281,6 +325,10 @@ GroundMesh::Build GroundMesh::build_tile(Control& control, SectorCache& cache, i
             v.position[3] = 1;
             v.diffuse[0] = v.diffuse[1] = v.diffuse[2] = gray[i];
             v.diffuse[3] = 1;
+            // For the lit ground: the tile's place and the corner (GroundLight).
+            v.normal[0] = px + cache.shift_x;
+            v.normal[1] = py + cache.shift_y;
+            v.normal[2] = float(i);
             v.uv[0][0] = stage0.u[i];
             v.uv[0][1] = stage0.v[i];
             if (stage1) {
@@ -483,6 +531,14 @@ void GroundMesh::draw_ground(Control& control, uint32_t device_pointer) {
 
     const float scale = 1.0f / zoom;
     auto& target = dd_.surface(found->second.target);
+    if (light_.on) {
+        // renderTileRow: trunc((row position / zoom - W/2) * zoom) + W/2, the same for y with H/2.
+        light_.inverse_zoom = scale;
+        light_.zoom = zoom;
+        light_.origin[0] = float(target.image.width / 2);
+        light_.origin[1] = float(target.image.height / 2);
+    }
+
     if (window_ != target.window) {
         if (window_) {
             reset_all();
@@ -683,6 +739,16 @@ void GroundMesh::draw_ground(Control& control, uint32_t device_pointer) {
                 item.mesh_transform[2] = entries[at].ty * scale;
                 item.mesh_transform[3] = ground_z;
                 item.mesh_clamp = {first.clamp[0], first.clamp[1]};
+                if (light_.on) {
+                    if (!batch.ground_light.on) {
+                        batch.ground_light = light_;
+                    }
+
+                    item.mesh_lit = true;
+                    item.mesh_light[0] = entries[at].tx;
+                    item.mesh_light[1] = entries[at].ty;
+                }
+
                 batch.items.push_back(item);
             });
             target.gpu_dirty = true;
@@ -720,6 +786,14 @@ bool GroundMesh::tile_row(X86* c) {
     if (memory.load32(esp + 12)) {
         ground_rows_ = true;
         visit_row(control, memory.load32(esp + 8));
+    }
+
+    if (light_.on) {
+        // The quads that still pass through cTileRenderer (water) take their corners from its row buffers, which
+        // expect every tile of a row; with the ground skipped they would be another tile's. In this state it looks
+        // every corner up itself.
+        memory.store32(tile_renderer + renderer_pass, 0);
+        memory.store32(tile_renderer + renderer_rows, 2);
     }
 
     in_row_ = active_;

@@ -79,6 +79,10 @@ std::vector<ForcedSetting> force_required_settings(std::string& text);
 // The same on a file, rewritten (through a temporary file renamed over it) only when something changed. False when
 // the file cannot be read or written.
 bool force_required_settings_file(const std::string& settings_path, std::vector<ForcedSetting>& changed);
+// DISPLAY : n in Settings.cfg: the host display to run on, 1-based; 0 (also when absent, `auto` or invalid) picks
+// the display under the pointer at start-up.
+int parse_display_setting(const std::string& settings_text);
+int read_display_setting(const std::string& settings_path);
 // The limit for a display refreshing at `refresh_hz` (0: unknown, then 60) when automatic, clamped to 30..240.
 int32_t resolve_fps_limit(const FpsLimit& limit, int refresh_hz);
 // Writes the generated table into the mapped image: code cells always (original values when off), data sites only

@@ -60,6 +60,9 @@ locations (`~/Games`, `~/Applications`, `/Applications`, CrossOver bottles' `dri
     (backpack, equipment, statistics; each keeps where the cursor was), the right stick scrolls. **A / X** are the
     left / right mouse button, **B** closes (Esc).
   * Movies: **A**, **B** or **Start** skips.
+* With several displays the game runs on the one under the mouse pointer when it starts (its size is used for the
+  fullscreen game screen). `DISPLAY : 2` in `Settings.cfg` (or `SACRED_DISPLAY=2`) picks a display by number
+  instead; the log lists them as `SACRED_DISPLAY_LIST` lines.
 * `LEGACY_UI : 1` in `Settings.cfg` switches to the original Sacred look: its UI skin (bronze frames with vines,
   in the menus and in game), menu art (sunlit gate main menu, character select cave, dwarven hall behind the
   options) and menu music (`MUSIC_MENU.mp3`)

@@ -377,6 +377,11 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
         // Startup has seeded the profile's Settings.cfg; the resolution cells must hold their values before any guest
         // code runs.
         sacred::ResolutionConfig resolution = sacred::read_resolution_settings(profile + "/Settings.cfg");
+        // The display to run on (DISPLAY : n, else the one under the pointer) is fixed before its size is first read.
+        if (host) {
+            host->prefer_display(sacred::read_display_setting(profile + "/Settings.cfg"));
+        }
+
         // Starting fullscreen without HD_WIDTH/HD_HEIGHT: the game screen takes the display's size, so the frame fills
         // it 1:1 instead of a letterboxed, scaled 1024x768. SACRED_HD_AUTO=0 keeps the original size.
         if (!resolution.enabled && host && env_flag("SACRED_FULLSCREEN") && !env_off("SACRED_HD_AUTO")) {

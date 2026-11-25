@@ -1,6 +1,7 @@
 #include "qa.h"
 #include "window_host.h"
 #include "letterbox.h"
+#include "display_choice.h"
 #include "../runtime/process/memory.h"
 #include <SDL.h>
 #include <algorithm>
@@ -281,12 +282,57 @@ bool WindowHost::hide_cursor() {
     return previous;
 }
 
+// SDL thread only. SDL's display 0 is the main display (on macOS the one with the menu bar), which need not be the
+// one the player looks at: a laptop with an external monitor has the laptop screen as display 0 unless the menu
+// bar was moved. The game gets the display under the pointer instead, unless DISPLAY / SACRED_DISPLAY names one.
+void WindowHost::select_display() {
+    video();
+    if (display_selected_) {
+        return;
+    }
+
+    display_selected_ = true;
+    std::vector<DisplayRect> displays;
+    const int count = SDL_GetNumVideoDisplays();
+    for (int i = 0; i < count; ++i) {
+        SDL_Rect bounds{};
+        if (SDL_GetDisplayBounds(i, &bounds)) {
+            break;
+        }
+        displays.push_back({bounds.x, bounds.y, bounds.w, bounds.h});
+    }
+
+    int requested = preferred_display_.load();
+    const char* env = std::getenv("SACRED_DISPLAY");
+    if (env && *env) {
+        requested = parse_display_number(env);
+    }
+
+    int pointer_x = 0, pointer_y = 0;
+    SDL_GetGlobalMouseState(&pointer_x, &pointer_y);
+    const DisplayChoice choice = choose_display(displays, requested, true, pointer_x, pointer_y);
+    display_ = choice.index;
+    if (!displays.empty()) {
+        display_x_ = displays[size_t(display_)].x;
+        display_y_ = displays[size_t(display_)].y;
+    }
+
+    for (size_t i = 0; i < displays.size(); ++i) {
+        const char* name = SDL_GetDisplayName(int(i));
+        std::fprintf(stderr, "SACRED_DISPLAY_LIST number=%zu name=%s bounds=%d,%d %dx%d%s\n", i + 1, name ? name : "?",
+                     displays[i].x, displays[i].y, displays[i].width, displays[i].height,
+                     int(i) == display_ ? " chosen" : "");
+    }
+    std::fprintf(stderr, "SACRED_DISPLAY number=%d of=%zu source=%s requested=%d pointer=%d,%d\n", display_ + 1,
+                 displays.size(), choice.source.c_str(), requested, pointer_x, pointer_y);
+}
+
 std::pair<int, int> WindowHost::display_size() {
     std::pair<int, int> size;
     submit([&] {
-        video();
+        select_display();
         SDL_Rect bounds{};
-        if (SDL_GetDisplayBounds(0, &bounds)) {
+        if (SDL_GetDisplayBounds(display_, &bounds)) {
             throw GuestFault("cannot query SDL display bounds");
         }
 
@@ -301,9 +347,9 @@ std::pair<int, int> WindowHost::display_size() {
 int WindowHost::display_refresh_rate() {
     int hertz = 0;
     submit([&] {
-        video();
+        select_display();
         SDL_DisplayMode mode{};
-        if (SDL_GetCurrentDisplayMode(0, &mode) == 0) {
+        if (SDL_GetCurrentDisplayMode(display_, &mode) == 0) {
             hertz = mode.refresh_rate;
         }
     });
@@ -314,7 +360,7 @@ uint32_t WindowHost::create_window(const std::string& title, int x, int y, int w
                                    const std::vector<uint8_t>& icon, int icon_width, int icon_height) {
     uint32_t id = 0;
     submit([&] {
-        video();
+        select_display();
         configure_renderer_window();
         uint32_t flags = SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | (borderless ? uint32_t(SDL_WINDOW_BORDERLESS) : 0u);
 #ifdef __APPLE__
@@ -322,7 +368,8 @@ uint32_t WindowHost::create_window(const std::string& title, int x, int y, int w
             flags |= SDL_WINDOW_ALLOW_HIGHDPI;
         }
 #endif
-        auto* window = SDL_CreateWindow(title.c_str(), x, y, width, height, flags);
+        // Guest screen coordinates are relative to the chosen display.
+        auto* window = SDL_CreateWindow(title.c_str(), x + display_x_, y + display_y_, width, height, flags);
         if (!window) {
             throw GuestFault(std::string("SDL window creation failed: ") + SDL_GetError());
         }
@@ -405,7 +452,7 @@ void WindowHost::position_window(uint32_t id, int x, int y, int width, int heigh
         logical.height = height;
         // A fullscreen window keeps covering the display; the guest geometry is presented scaled into it.
         if (!logical.fullscreen) {
-            SDL_SetWindowPosition(found->second, x, y);
+            SDL_SetWindowPosition(found->second, x + display_x_, y + display_y_);
             SDL_SetWindowSize(found->second, width, height);
         }
 
@@ -435,7 +482,7 @@ void WindowHost::toggle_fullscreen(uint32_t id) {
     } else {
         SDL_SetWindowFullscreen(found->second, 0);
         SDL_SetWindowSize(found->second, state.width, state.height);
-        SDL_SetWindowPosition(found->second, state.x, state.y);
+        SDL_SetWindowPosition(found->second, state.x + display_x_, state.y + display_y_);
         state.fullscreen = false;
     }
 
@@ -527,6 +574,8 @@ HostWindowState WindowHost::host_window_state(uint32_t id) {
     }
 
     SDL_GetWindowPosition(found->second, &state.x, &state.y);
+    state.x -= display_x_;
+    state.y -= display_y_;
     SDL_GetWindowSize(found->second, &state.width, &state.height);
     // The guest sees the client area it asked for; the host window may be larger (fullscreen) or reshaped by
     // the window manager, and presentation scales the guest image into it.
@@ -1137,8 +1186,10 @@ void WindowHost::set_input_observer(std::function<bool(const HostEvent&)> observ
 std::pair<int, int> WindowHost::global_mouse() {
     std::pair<int, int> position;
     submit([&] {
-        video();
+        select_display();
         SDL_GetGlobalMouseState(&position.first, &position.second);
+        position.first -= display_x_;
+        position.second -= display_y_;
     });
     return position;
 }

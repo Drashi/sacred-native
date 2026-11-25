@@ -1,5 +1,6 @@
 #include "resolution.h"
 #include "resolution_table.h"
+#include "../../platform/display_choice.h"
 #include "../process/memory.h"
 #include <algorithm>
 #include <cctype>
@@ -223,6 +224,31 @@ ResolutionConfig read_resolution_settings(const std::string& settings_path) {
     std::ostringstream text;
     text << file.rdbuf();
     return parse_resolution_settings(text.str());
+}
+
+int parse_display_setting(const std::string& text) {
+    int number = 0;
+    std::istringstream lines(text);
+    for (std::string line; std::getline(lines, line);) {
+        const size_t colon = line.find(':');
+        if (colon == std::string::npos || trim(line.substr(0, colon)) != "DISPLAY") {
+            continue;
+        }
+
+        number = parse_display_number(trim(line.substr(colon + 1)));
+    }
+    return number;
+}
+
+int read_display_setting(const std::string& settings_path) {
+    std::ifstream file(settings_path, std::ios::binary);
+    if (!file) {
+        return 0;
+    }
+
+    std::ostringstream text;
+    text << file.rdbuf();
+    return parse_display_setting(text.str());
 }
 
 FpsLimit parse_fps_limit(const std::string& text, const char* env_limit) {

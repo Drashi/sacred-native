@@ -8,6 +8,10 @@
 * `runtime/ole/com.{h,cpp}`: host-implemented guest COM objects (IAMMultiMediaStream, IDirectDrawMediaStream, IDirectDrawStreamSample) with
   hosted-token vtables, same convention as `runtime/ddraw`. `Update` blocks on the pacer and writes the frame into the game's DirectDraw surface
   (`DirectDraw::movie_surface_*`); the game's own `Blt` presents it, so rendering stays on the existing SDL/GL path.
+* Only the game's `COMPAT_VIDEO : 1` path is supported (the `Blt` above, onto `GetWindowRect`, so the film fills any window); the
+  other path draws the film as a quad fixed to 0..1024 x 0..768 and an HD screen shows it in its top-left corner. The runtime
+  sets `COMPAT_VIDEO : 1` (and `GFX32 : 1`, without which the game asks for a 16 bpp mode) in the profile's `Settings.cfg` at
+  every start and logs `SETTINGS_FORCED key=... was=...` when it changed the file.
 * `OpenFile` failing (file missing, codec unsupported) returns VFW_E_UNSUPPORTED_STREAM and logs `MOVIE_SKIPPED`: the documented skip path, unchanged
   game behaviour. Builds without the SDL host or DirectDraw adapter skip at `CoCreateInstance`.
 * Added host APIs the movie path needs: `user32!GetWindowRect`, legacy `IDirectDrawSurface::Blt`, Blt/BltFast sources given as legacy pointers,

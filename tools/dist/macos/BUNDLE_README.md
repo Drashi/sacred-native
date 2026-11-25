@@ -78,6 +78,11 @@ and may start with `~/`, and a relative one is read from the working directory, 
 
 * `RENDER_SCALE : 2` / `SACRED_RENDER_SCALE=2` (1..4): the 3D scene and the screen are rendered at k times the game
   resolution and filtered down to the window (sharper models and edges; k*k times the GPU fill cost).
+  At 2 or more the game window asks macOS for a drawable in the display's pixels: on a Retina display in a
+  HiDPI mode (the usual "looks like" modes) the frame then reaches the screen about 1:1 instead of being filtered
+  down to the window's points and stretched again by macOS. `HIDPI : 0` / `SACRED_HIDPI=0` turns that off (the
+  window as at scale 1). The log says which: `HIDPI on` or `HIDPI off`, and `SDL_DRAWABLE window=WxH drawable=WxH`
+  with the window in points and the drawable in pixels (equal when the display is not in a HiDPI mode).
 * `TEXTURE_PACK : DIR` / `SACRED_TEXTURE_PACK=DIR`: replacement textures. A PNG named `<w>x<h>_<FORMAT>_<hash>.png`
   (or `<hash>.png`, in any subdirectory) replaces the game texture with that content hash; it must be an integer
   multiple of the original size (e.g. 512x512 for a 256x256 texture), same factor on both axes.

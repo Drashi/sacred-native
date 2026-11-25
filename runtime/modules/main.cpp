@@ -530,6 +530,16 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
         }
 
         draw.render_scale(hd.render_scale);
+#ifdef __APPLE__
+        // A drawable in the display's pixels for the game window (resolution.h hidpi_drawable); the SDL_DRAWABLE line
+        // of the renderer says what the display gave.
+        if (host) {
+            const bool hidpi = sacred::hidpi_drawable(hd);
+            host->high_dpi(hidpi);
+            event(std::string("HIDPI ") + (hidpi ? "on" : "off") + " render_scale=" + std::to_string(hd.render_scale) +
+                  (hd.hidpi ? "" : " (HIDPI : 0 or SACRED_HIDPI=0)"));
+        }
+#endif
         if (resolution.enabled) {
             // The menu canvas textures (water, sky, background tiles; runtime/ddraw/menu_backdrops.h) and the user's
             // wide pictures, if any. The game loads texture.pak, then texture03.pak (later entries win); the profile

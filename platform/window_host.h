@@ -90,6 +90,10 @@ public:
         minimum_display_.second = height;
     }
 
+    // macOS: windows created from now on ask for a drawable in the display's pixels (SDL_WINDOW_ALLOW_HIGHDPI) instead
+    // of one in points; positions, sizes and pointer coordinates stay in points. Other systems ignore it.
+    void high_dpi(bool on) { high_dpi_ = on; }
+
     uint32_t create_window(const std::string& title, int x, int y, int width, int height, bool borderless,
                            const std::vector<uint8_t>& icon, int icon_width, int icon_height);
     void show_window(uint32_t window, bool visible);
@@ -186,6 +190,7 @@ private:
     std::atomic<bool> stopped_{false};
     std::atomic<bool> scripted_pointer_{false};
     std::pair<std::atomic<int>, std::atomic<int>> minimum_display_{0, 0};
+    std::atomic<bool> high_dpi_{false};
     static constexpr uint32_t injected_pointer = 0x51a0c0de;
     SDL_Cursor* arrow_ = nullptr;
     std::map<uint32_t, SDL_Window*> windows_;

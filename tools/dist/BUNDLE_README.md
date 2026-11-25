@@ -83,6 +83,8 @@ and may start with `~/`, and a relative one is read from the working directory, 
 
 * `RENDER_SCALE : 2` / `SACRED_RENDER_SCALE=2` (1..4): the 3D scene and the screen are rendered at k times the game
   resolution and filtered down to the window (sharper models and edges; k*k times the GPU fill cost).
+  (`HIDPI : 0` / `SACRED_HIDPI=0` is for macOS, where scale 2 or more asks for a drawable in the display's pixels;
+  Linux ignores it.)
 * `TEXTURE_PACK : DIR` / `SACRED_TEXTURE_PACK=DIR`: replacement textures. A PNG named `<w>x<h>_<FORMAT>_<hash>.png`
   (or `<hash>.png`, in any subdirectory) replaces the game texture with that content hash; it must be an integer
   multiple of the original size (e.g. 512x512 for a 256x256 texture), same factor on both axes.

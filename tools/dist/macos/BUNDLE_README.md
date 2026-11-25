@@ -30,6 +30,8 @@ locations (`~/Games`, `~/Applications`, `/Applications`, CrossOver bottles' `dri
 * First run seeds `Settings.cfg` there from the installation's file with `FULLSCREEN : 0`, `SOUND : 1`, `SHOWMOVIE : 1`
   (a minimal file if the installation has none). The launcher's Settings page edits the keys below in it, or edit it
   by hand (the game keeps keys it does not know when it writes the file).
+* `GFX32 : 1` and `COMPAT_VIDEO : 1` are set at every start (the engine needs both: 32-bit display modes, films
+  scaled to the window); other values for them are replaced.
 * Fullscreen: `--fullscreen` (remembered until `--windowed`), or Alt/Option+Enter in the game window. `FULLSCREEN : 1`
   in `Settings.cfg` is converted to `--fullscreen`: the engine has no exclusive DirectDraw fullscreen, so the game runs
   windowed in a window that covers the display. Without `HD_WIDTH`/`HD_HEIGHT` a fullscreen start sets the game

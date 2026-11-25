@@ -4,7 +4,9 @@
 #include "runtime/modules/resolution_table.h"
 #include "runtime/process/memory.h"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
 
 extern "C" {
 const char resolution_table_sha256[] = "fixture";
@@ -228,6 +230,45 @@ int main() {
     EXPECT(parse_option_settings("LEGACY_UI:1\nLEGACY_UI : 0\n").empty());
     EXPECT(parse_option_settings("LEGACY_UI : 0\n").empty());
     EXPECT(parse_option_settings("LEGACY_UI :\n").empty());
+    // GFX32 and COMPAT_VIDEO are held at 1: missing keys are appended with the file's line ending, other values are
+    // replaced in place, a file that already has both stays byte for byte, and every other line is kept.
+    using sacred::force_required_settings;
+    std::string cfg = "LANGUAGE : US\r\nSOUND : 1\r\n";
+    auto forced = force_required_settings(cfg);
+    EXPECT(cfg == "LANGUAGE : US\r\nSOUND : 1\r\nGFX32 : 1\r\nCOMPAT_VIDEO : 1\r\n");
+    EXPECT(forced.size() == 2 && forced[0].key == "GFX32" && forced[0].was == "missing" &&
+           forced[1].key == "COMPAT_VIDEO" && forced[1].was == "missing");
+    EXPECT(force_required_settings(cfg).empty());
+    cfg = "COMPAT_VIDEO : 0\nFULLSCREEN : 0\nGFX32:0\nSOUND : 1";
+    forced = force_required_settings(cfg);
+    EXPECT(cfg == "COMPAT_VIDEO : 1\nFULLSCREEN : 0\nGFX32 : 1\nSOUND : 1");
+    EXPECT(forced.size() == 2 && forced[0].key == "GFX32" && forced[0].was == "0" && forced[1].key == "COMPAT_VIDEO" &&
+           forced[1].was == "0");
+    const std::string already = "COMPAT_VIDEO : 1\r\nGFX32 : 1\r\nLANGUAGE : US\r\n";
+    cfg = already;
+    EXPECT(force_required_settings(cfg).empty() && cfg == already);
+    cfg = "GFX32 : 0\r\nLANGUAGE : US";
+    forced = force_required_settings(cfg);
+    EXPECT(cfg == "GFX32 : 1\r\nLANGUAGE : US\r\nCOMPAT_VIDEO : 1\r\n");
+    EXPECT(forced.size() == 2 && forced[0].was == "0" && forced[1].was == "missing");
+    cfg.clear();
+    force_required_settings(cfg);
+    EXPECT(cfg == "GFX32 : 1\r\nCOMPAT_VIDEO : 1\r\n");
+    // The file form rewrites only when something changed.
+    const std::string path =
+        std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/tmp") + "/hd_resolution_tests_Settings.cfg";
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << "GFX32 : 0\r\nSOUND : 1\r\n";
+    }
+
+    std::vector<sacred::ForcedSetting> changed;
+    EXPECT(sacred::force_required_settings_file(path, changed) && changed.size() == 2);
+    EXPECT(sacred::read_setting(path, "GFX32") == "1" && sacred::read_setting(path, "COMPAT_VIDEO") == "1" &&
+           sacred::read_setting(path, "SOUND") == "1");
+    EXPECT(sacred::force_required_settings_file(path, changed) && changed.empty());
+    std::remove(path.c_str());
+    EXPECT(!sacred::force_required_settings_file(path, changed));
     if (failures) {
         return 1;
     }

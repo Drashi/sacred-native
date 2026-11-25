@@ -58,6 +58,19 @@ FpsLimit read_fps_limit(const std::string& settings_path);
 bool has_wait_retrace(const std::string& settings_path);
 // The value of a Settings.cfg key (its last line, trimmed), "" when absent or when the file cannot be read.
 std::string read_setting(const std::string& settings_path, const std::string& key);
+// Settings.cfg keys the port depends on, held at 1 whatever the file says: GFX32 (without it the texture loader asks
+// for a 16 bpp display mode, which the DirectDraw runtime does not offer, and the driver set-up reads a null mode)
+// and COMPAT_VIDEO (films are blitted over the window rectangle; the other path draws them as a fixed 1024x768 quad,
+// which an HD screen shows in its top-left corner). The GOG English 2.28 installation has neither key.
+struct ForcedSetting {
+    std::string key, was; // was: the previous value, "missing" when the file had no such line
+};
+// Sets every line of those keys to "KEY : 1" and appends the missing ones with the file's own line ending (CR LF when
+// it has none); every other line stays as it was. Returns what changed (empty: the text is untouched).
+std::vector<ForcedSetting> force_required_settings(std::string& text);
+// The same on a file, rewritten (through a temporary file renamed over it) only when something changed. False when
+// the file cannot be read or written.
+bool force_required_settings_file(const std::string& settings_path, std::vector<ForcedSetting>& changed);
 // The limit for a display refreshing at `refresh_hz` (0: unknown, then 60) when automatic, clamped to 30..240.
 int32_t resolve_fps_limit(const FpsLimit& limit, int refresh_hz);
 // Writes the generated table into the mapped image: code cells always (original values when off), data sites only

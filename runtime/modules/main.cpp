@@ -361,6 +361,19 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
 
         sacred::Startup startup(control, loader, environment);
         startup.bind();
+        // Startup has seeded the profile's Settings.cfg (never the installation's): GFX32 and COMPAT_VIDEO are held
+        // at 1 before the game reads the file (see resolution.h).
+        {
+            std::vector<sacred::ForcedSetting> forced;
+            if (!sacred::force_required_settings_file(profile + "/Settings.cfg", forced)) {
+                event("SETTINGS_FORCE_FAILED path=" + profile + "/Settings.cfg");
+            }
+
+            for (const sacred::ForcedSetting& setting : forced) {
+                event("SETTINGS_FORCED key=" + setting.key + " was=" + (setting.was.empty() ? "<empty>" : setting.was));
+            }
+        }
+
         // Startup has seeded the profile's Settings.cfg; the resolution cells must hold their values before any guest
         // code runs.
         sacred::ResolutionConfig resolution = sacred::read_resolution_settings(profile + "/Settings.cfg");

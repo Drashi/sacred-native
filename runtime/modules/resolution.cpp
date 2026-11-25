@@ -3,6 +3,7 @@
 #include "../process/memory.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -275,6 +276,94 @@ std::string read_setting(const std::string& settings_path, const std::string& ke
     }
 
     return value;
+}
+
+std::vector<ForcedSetting> force_required_settings(std::string& text) {
+    static const char* const keys[] = {"GFX32", "COMPAT_VIDEO"};
+    const std::string ending = text.find("\r\n") != std::string::npos ? "\r\n"
+                               : text.find('\n') != std::string::npos ? "\n"
+                                                                      : "\r\n";
+    std::vector<ForcedSetting> changed;
+    for (const char* key : keys) {
+        bool found = false;
+        std::string out;
+        for (size_t begin = 0; begin < text.size();) {
+            size_t end = text.find('\n', begin);
+            end = end == std::string::npos ? text.size() : end + 1;
+            std::string line = text.substr(begin, end - begin);
+            begin = end;
+            const size_t colon = line.find(':');
+            if (colon == std::string::npos || trim(line.substr(0, colon)) != key) {
+                out += line;
+                continue;
+            }
+
+            found = true;
+            size_t body = line.size();
+            while (body > colon + 1 && (line[body - 1] == '\n' || line[body - 1] == '\r')) {
+                --body;
+            }
+
+            const std::string value = trim(line.substr(colon + 1, body - colon - 1));
+            if (value == "1") {
+                out += line;
+                continue;
+            }
+
+            changed.push_back({key, value});
+            out += std::string(key) + " : 1" + line.substr(body);
+        }
+
+        if (!found) {
+            if (!out.empty() && out.back() != '\n') {
+                out += ending;
+            }
+
+            out += std::string(key) + " : 1" + ending;
+            changed.push_back({key, "missing"});
+        }
+
+        text = std::move(out);
+    }
+
+    return changed;
+}
+
+bool force_required_settings_file(const std::string& settings_path, std::vector<ForcedSetting>& changed) {
+    changed.clear();
+    std::string text;
+    {
+        std::ifstream file(settings_path, std::ios::binary);
+        if (!file) {
+            return false;
+        }
+
+        std::ostringstream read;
+        read << file.rdbuf();
+        text = read.str();
+    }
+
+    changed = force_required_settings(text);
+    if (changed.empty()) {
+        return true;
+    }
+
+    const std::string partial = settings_path + ".forced-tmp";
+    {
+        std::ofstream out(partial, std::ios::binary | std::ios::trunc);
+        out << text;
+        if (!out.flush()) {
+            std::remove(partial.c_str());
+            return false;
+        }
+    }
+
+    if (std::rename(partial.c_str(), settings_path.c_str()) != 0) {
+        std::remove(partial.c_str());
+        return false;
+    }
+
+    return true;
 }
 
 int32_t resolve_fps_limit(const FpsLimit& limit, int refresh_hz) {

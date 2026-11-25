@@ -316,9 +316,13 @@ uint32_t WindowHost::create_window(const std::string& title, int x, int y, int w
     submit([&] {
         video();
         configure_renderer_window();
-        auto* window = SDL_CreateWindow(title.c_str(), x, y, width, height,
-                                        SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
-                                            (borderless ? uint32_t(SDL_WINDOW_BORDERLESS) : 0u));
+        uint32_t flags = SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | (borderless ? uint32_t(SDL_WINDOW_BORDERLESS) : 0u);
+#ifdef __APPLE__
+        if (high_dpi_) {
+            flags |= SDL_WINDOW_ALLOW_HIGHDPI;
+        }
+#endif
+        auto* window = SDL_CreateWindow(title.c_str(), x, y, width, height, flags);
         if (!window) {
             throw GuestFault(std::string("SDL window creation failed: ") + SDL_GetError());
         }

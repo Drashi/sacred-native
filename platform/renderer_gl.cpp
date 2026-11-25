@@ -501,6 +501,11 @@ public:
                      reinterpret_cast<const char*>(glGetString(GL_VERSION)),
                      reinterpret_cast<const char*>(glGetString(GL_RENDERER)),
                      reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
+#ifdef __APPLE__
+        int width = 0, height = 0;
+        SDL_GL_GetDrawableSize(window_, &width, &height);
+        log_drawable(width, height);
+#endif
     }
 
     ~GlRenderer() override {
@@ -1535,6 +1540,9 @@ public:
 
         int width = 0, height = 0;
         SDL_GL_GetDrawableSize(window_, &width, &height);
+#ifdef __APPLE__
+        log_drawable(width, height);
+#endif
         forget();
         glBindFramebuffer(GL_READ_FRAMEBUFFER, value.framebuffer);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -1617,6 +1625,26 @@ public:
     void capture_next(const std::string& path, bool storage) override { captures_.emplace_back(path, storage); }
 
 private:
+#ifdef __APPLE__
+    // One SDL_DRAWABLE line when the context exists and again whenever the window (points) or its drawable (pixels)
+    // changes size: hidpi=1 says the window asked for a drawable in pixels (WindowHost::high_dpi), and a drawable
+    // larger than the window says the display gave it one (a HiDPI display mode).
+    void log_drawable(int width, int height) {
+        int points_width = 0, points_height = 0;
+        SDL_GetWindowSize(window_, &points_width, &points_height);
+        const std::array<int, 4> sizes{points_width, points_height, width, height};
+        if (sizes == logged_sizes_) {
+            return;
+        }
+
+        logged_sizes_ = sizes;
+        std::fprintf(stderr, "SDL_DRAWABLE window=%dx%d drawable=%dx%d pixels_per_point=%.2f hidpi=%d\n", points_width,
+                     points_height, width, height, points_width > 0 ? double(width) / points_width : 0.0,
+                     (SDL_GetWindowFlags(window_) & SDL_WINDOW_ALLOW_HIGHDPI) ? 1 : 0);
+    }
+
+    std::array<int, 4> logged_sizes_{};
+#endif
     // Draws [x, x+width) x [y, y+height) of the surface (guest units) into `box` of the drawable (top-left origin)
     // with the resampling program (shaders.h): HD mode insets, scaled to the window, sharper than a linear blit
     // and without the frame around the rectangle bleeding in.

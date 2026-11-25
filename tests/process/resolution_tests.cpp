@@ -179,6 +179,32 @@ int main() {
     hd = parse_hd_options("RENDER_SCALE : 2\n", "", "", "");
     EXPECT(hd.render_scale == 2 && hd.texture_pack.empty() && hd.texture_dump.empty());
 
+    // HIDPI (macOS drawable in pixels): on by default, but only a render scale of 2 or more asks for it; HIDPI : 0
+    // or SACRED_HIDPI=0 keeps the window in points, and the environment wins over Settings.cfg.
+    using sacred::hidpi_drawable;
+    hd = parse_hd_options("", nullptr, nullptr, nullptr);
+    EXPECT(hd.hidpi && !hidpi_drawable(hd));
+    hd = parse_hd_options("RENDER_SCALE : 2\n", nullptr, nullptr, nullptr);
+    EXPECT(hd.hidpi && hidpi_drawable(hd) && hd.notes.empty());
+    EXPECT(hidpi_drawable(parse_hd_options("", "4", nullptr, nullptr)));
+    EXPECT(!hidpi_drawable(parse_hd_options("RENDER_SCALE : 2\n", "1", nullptr, nullptr)));
+    hd = parse_hd_options("RENDER_SCALE : 2\r\nHIDPI : 0\r\n", nullptr, nullptr, nullptr);
+    EXPECT(!hd.hidpi && !hidpi_drawable(hd) && hd.notes.empty());
+    hd = parse_hd_options("RENDER_SCALE : 2\nHIDPI : 1\n", nullptr, nullptr, nullptr);
+    EXPECT(hd.hidpi && hidpi_drawable(hd));
+    hd = parse_hd_options("RENDER_SCALE : 2\nHIDPI : 1\n", nullptr, nullptr, nullptr, nullptr, nullptr, "0");
+    EXPECT(!hd.hidpi && !hidpi_drawable(hd) && hd.notes.empty());
+    hd = parse_hd_options("RENDER_SCALE : 2\nHIDPI : 0\n", nullptr, nullptr, nullptr, nullptr, nullptr, " 1 ");
+    EXPECT(hd.hidpi && hidpi_drawable(hd) && hd.notes.empty());
+    EXPECT(parse_hd_options("HIDPI : 0\n", nullptr, nullptr, nullptr, nullptr, nullptr, "").hidpi == false);
+    // Anything but 0 or 1 is noted and leaves the previous value (Settings.cfg's, or on).
+    for (const char* bad : {"2", "-1", "off", "yes", "1.0", "01x", " "}) {
+        hd = parse_hd_options(std::string("RENDER_SCALE : 2\nHIDPI : ") + bad + "\n", nullptr, nullptr, nullptr);
+        EXPECT(hd.hidpi && hd.notes.size() == 1);
+        hd = parse_hd_options("RENDER_SCALE : 2\nHIDPI : 0\n", nullptr, nullptr, nullptr, nullptr, nullptr, bad);
+        EXPECT(!hd.hidpi && hd.notes.size() == 1);
+    }
+
     sacred::Memory memory;
     memory.reserve(0x00500000u, 2 * sacred::Memory::page_size, "fixture");
     memory.commit(0x00500000u, sacred::Memory::page_size, sacred::Read | sacred::Write, "fixture");

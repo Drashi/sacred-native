@@ -26,15 +26,23 @@ ResolutionConfig display_resolution(int width, int height);
 //   SACRED_TEXTURE_DUMP=dir                       writes every distinct texture content once as PNG
 //   MENU_BACKGROUNDS : dir / SACRED_MENU_BACKGROUNDS=dir   wide images for the 1024x768 screens in HD mode
 //                                                 (runtime/ddraw/menu_backdrops.h)
+//   HIDPI : 0 / SACRED_HIDPI=0                    macOS: keeps the window's drawable in points (see hidpi_drawable)
 struct HdOptions {
     uint32_t render_scale = 1;
     uint32_t texture_upscale = 0; // TEXTURE_UPSCALE / SACRED_TEXTURE_UPSCALE: 2..4 (0 or 1: off)
+    bool hidpi = true;            // HIDPI / SACRED_HIDPI: 0 or 1 (others are ignored with a note)
     std::string texture_pack, texture_dump, menu_backgrounds;
     std::vector<std::string> notes; // one line per ignored value, for the log
 };
 // The directories (TEXTURE_PACK, MENU_BACKGROUNDS, from Settings.cfg or the environment) go through option_directory.
 HdOptions parse_hd_options(const std::string& settings_text, const char* env_scale, const char* env_pack,
-                           const char* env_dump, const char* env_backgrounds = nullptr, const char* home = nullptr);
+                           const char* env_dump, const char* env_backgrounds = nullptr, const char* home = nullptr,
+                           const char* env_hidpi = nullptr);
+// macOS: whether the game window asks for a drawable in the display's pixels (SDL_WINDOW_ALLOW_HIGHDPI). Only a
+// render scale of 2 or more has the pixels to fill one; at scale 1 the window stays as it always was. On a display
+// in a HiDPI mode the 2x frame then reaches the panel about 1:1 instead of being filtered down to the window's
+// points and stretched again by the system.
+bool hidpi_drawable(const HdOptions& options);
 // A directory value as written by hand: surrounding blanks trimmed, one pair of surrounding quotes ("..." or '...')
 // removed, and a leading "~/" (or a lone "~") replaced by `home` ($HOME) when that is set.
 std::string option_directory(const std::string& value, const char* home);

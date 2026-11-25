@@ -205,7 +205,11 @@ const std::vector<Option>& options() {
          Section::graphics,
          "Render scale",
          "The 3D scene and the screen are drawn at a multiple of the screen size and filtered down: sharper models "
-         "and edges, at that multiple squared in graphics work.",
+         "and edges, at that multiple squared in graphics work."
+#ifdef __APPLE__
+         " On a Retina display 2x draws at the panel's own pixels."
+#endif
+         ,
          {{"", "1x (off)"}, {"2", "2x"}, {"3", "3x"}, {"4", "4x"}},
          {"1"},
          "2"},

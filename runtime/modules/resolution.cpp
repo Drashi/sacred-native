@@ -103,7 +103,7 @@ std::string option_directory(const std::string& value, const char* home) {
 }
 
 HdOptions parse_hd_options(const std::string& text, const char* env_scale, const char* env_pack, const char* env_dump,
-                           const char* env_backgrounds, const char* home) {
+                           const char* env_backgrounds, const char* home, const char* env_hidpi) {
     HdOptions options;
     // An invalid value (not an integer 1..4) is ignored with a note: the previous one (Settings.cfg's, or 1) stays.
     auto scale = [&](const std::string& value, const char* source) {
@@ -122,6 +122,14 @@ HdOptions parse_hd_options(const std::string& text, const char* env_scale, const
             options.notes.push_back(std::string(source) + " '" + value + "' is not an integer 0..4; ignored");
         }
     };
+    auto hidpi = [&](const std::string& value, const char* source) {
+        const std::string switch_value = trim(value);
+        if (switch_value == "0" || switch_value == "1") {
+            options.hidpi = switch_value == "1";
+        } else {
+            options.notes.push_back(std::string(source) + " '" + value + "' is not 0 or 1; ignored");
+        }
+    };
     std::istringstream lines(text);
     for (std::string line; std::getline(lines, line);) {
         const size_t colon = line.find(':');
@@ -138,6 +146,8 @@ HdOptions parse_hd_options(const std::string& text, const char* env_scale, const
             options.menu_backgrounds = option_directory(line.substr(colon + 1), home);
         } else if (key == "TEXTURE_UPSCALE") {
             upscale(trim(line.substr(colon + 1)), "TEXTURE_UPSCALE");
+        } else if (key == "HIDPI") {
+            hidpi(trim(line.substr(colon + 1)), "HIDPI");
         }
     }
 
@@ -161,7 +171,15 @@ HdOptions parse_hd_options(const std::string& text, const char* env_scale, const
         upscale(env_upscale, "SACRED_TEXTURE_UPSCALE");
     }
 
+    if (env_hidpi && *env_hidpi) {
+        hidpi(env_hidpi, "SACRED_HIDPI");
+    }
+
     return options;
+}
+
+bool hidpi_drawable(const HdOptions& options) {
+    return options.hidpi && options.render_scale >= 2;
 }
 
 size_t parse_texture_cache_mb(const char* value, std::string* note) {
@@ -193,7 +211,7 @@ HdOptions read_hd_options(const std::string& settings_path) {
 
     return parse_hd_options(text.str(), std::getenv("SACRED_RENDER_SCALE"), std::getenv("SACRED_TEXTURE_PACK"),
                             std::getenv("SACRED_TEXTURE_DUMP"), std::getenv("SACRED_MENU_BACKGROUNDS"),
-                            std::getenv("HOME"));
+                            std::getenv("HOME"), std::getenv("SACRED_HIDPI"));
 }
 
 ResolutionConfig read_resolution_settings(const std::string& settings_path) {

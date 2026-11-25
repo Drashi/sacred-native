@@ -3,6 +3,7 @@
 #include "runtime/modules/resolution.h"
 #include "runtime/modules/resolution_table.h"
 #include "runtime/process/memory.h"
+#include "platform/display_choice.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -249,6 +250,33 @@ int main() {
     }
 
     EXPECT(parse_fps_limit("FPS_LIMIT : 144\n", "abc").fps == 144);
+    // DISPLAY: 1-based display number, anything else is automatic (0); the last line wins.
+    EXPECT(sacred::parse_display_setting("SOUND : 1\r\n") == 0);
+    EXPECT(sacred::parse_display_setting("DISPLAY : 2\r\n") == 2);
+    EXPECT(sacred::parse_display_setting("DISPLAY:1\nDISPLAY : 3\n") == 3);
+    for (const char* bad : {"auto", "0", "-1", "x2", "", "123"}) {
+        EXPECT(sacred::parse_display_setting(std::string("DISPLAY : ") + bad + "\n") == 0);
+    }
+    // Display choice: laptop (display 1, main) at the origin, external monitor to its left and above.
+    const std::vector<sacred::DisplayRect> displays = {{0, 0, 1512, 982}, {-2560, -300, 2560, 1080}};
+    auto choice = sacred::choose_display(displays, 0, true, -100, 200);
+    EXPECT(choice.index == 1 && choice.source == "cursor");
+    choice = sacred::choose_display(displays, 0, true, 700, 500);
+    EXPECT(choice.index == 0 && choice.source == "cursor");
+    choice = sacred::choose_display(displays, 1, true, -100, 200);
+    EXPECT(choice.index == 0 && choice.source == "setting");
+    choice = sacred::choose_display(displays, 2, false, 0, 0);
+    EXPECT(choice.index == 1 && choice.source == "setting");
+    // Out of range or pointer outside every display: the first display.
+    choice = sacred::choose_display(displays, 3, true, 5000, 5000);
+    EXPECT(choice.index == 0 && choice.source == "first");
+    choice = sacred::choose_display({}, 2, true, 0, 0);
+    EXPECT(choice.index == 0);
+    // Edges: right and bottom edges belong to the next display.
+    choice = sacred::choose_display(displays, 0, true, 0, 0);
+    EXPECT(choice.index == 0);
+    choice = sacred::choose_display(displays, 0, true, -1, 0);
+    EXPECT(choice.index == 1);
     // Settings.cfg switches: any value but 0 turns one on, the last line wins, unknown keys are ignored.
     using sacred::parse_option_settings;
     EXPECT(parse_option_settings("SOUND : 1\r\n").empty());

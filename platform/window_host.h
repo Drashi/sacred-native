@@ -81,8 +81,12 @@ public:
     void screen_saver(bool enabled);
     void load_arrow_cursor();
     bool hide_cursor();
-    // The guest desktop: the host display, but at least the size set with minimum_display_size().
+    // The guest desktop: the chosen host display, but at least the size set with minimum_display_size(). Guest
+    // screen coordinates start at that display's top-left corner.
     std::pair<int, int> display_size();
+    // The display to run on, 1-based (0: automatic, the display under the pointer); SACRED_DISPLAY wins. Only a call
+    // before the display is first used counts: the choice is made once and kept for the whole run.
+    void prefer_display(int number) { preferred_display_ = number; }
     // Refresh rate of the host display in Hz, 0 when SDL does not know it.
     int display_refresh_rate();
     void minimum_display_size(int width, int height) {
@@ -191,6 +195,11 @@ private:
     std::atomic<bool> scripted_pointer_{false};
     std::pair<std::atomic<int>, std::atomic<int>> minimum_display_{0, 0};
     std::atomic<bool> high_dpi_{false};
+    std::atomic<int> preferred_display_{0};
+    // SDL thread only: the chosen display (SDL index) and its origin in SDL's global coordinates.
+    void select_display();
+    bool display_selected_ = false;
+    int display_ = 0, display_x_ = 0, display_y_ = 0;
     static constexpr uint32_t injected_pointer = 0x51a0c0de;
     SDL_Cursor* arrow_ = nullptr;
     std::map<uint32_t, SDL_Window*> windows_;

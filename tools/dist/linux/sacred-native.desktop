@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Sacred Native
+GenericName=Role-playing game
+Comment=Sacred Gold, native on this machine (needs your own copy of the game)
+Exec=@LAUNCHER@
+Icon=sacred-native
+Terminal=false
+Categories=Game;RolePlaying;
+Keywords=Sacred;Gold;Underworld;RPG;
+StartupNotify=true
+StartupWMClass=sacred-native

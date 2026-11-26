@@ -1,5 +1,6 @@
 #pragma once
 #include "gamepad.h"
+#include "app_icon.h"
 #include "renderer.h"
 #include "virtual_cursor.h"
 #include <atomic>
@@ -195,6 +196,8 @@ private:
     std::atomic<bool> scripted_pointer_{false};
     std::pair<std::atomic<int>, std::atomic<int>> minimum_display_{0, 0};
     std::atomic<bool> high_dpi_{false};
+    // SDL thread only: the project's logo (app_icon.h), the icon of every window instead of the one the guest names.
+    IconImage app_icon_;
     std::atomic<int> preferred_display_{0};
     // SDL thread only: the chosen display (SDL index) and its origin in SDL's global coordinates.
     void select_display();

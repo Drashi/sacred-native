@@ -5,13 +5,16 @@
 // the sacred-gold script. Nothing of the game is part of the download.
 //
 // Layout of the bundle it expects next to itself: sacred-gold, sacred-native, lib/, source/ (translator, recipe,
-// runtime headers), python/ (the interpreter the translator runs on) and zig/ (the C compiler used when the system has
-// none). In a build tree the same pieces come from SACRED_LAUNCHER_ROOT / _PYTHON / _CC.
+// runtime headers), python/ (the interpreter the translator runs on), zig/ (the C compiler used when the system has
+// none) and menu-backgrounds/. In the macOS app (Sacred Native.app) the executables are in Contents/MacOS, the
+// libraries in Contents/Frameworks and the rest in Contents/Resources (resource_dir). In a build tree the same pieces
+// come from SACRED_LAUNCHER_ROOT / _PYTHON / _CC. Everything it writes goes to the profile, never next to itself.
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
 #include "platform/font.h"
 #include "platform/digest.h"
+#include "platform/app_icon.h"
 #include "runtime/launcher/settings.h"
 #include "runtime/process/loader.h"
 #include <SDL.h>
@@ -59,6 +62,17 @@ fs::path executable_dir(const char* argv0) {
     }
 
     return self.parent_path();
+}
+
+// Where the read-only pieces lie: next to the executable, or in Contents/Resources when the executable is in
+// Contents/MacOS of the macOS app.
+fs::path resource_dir(const fs::path& here) {
+    const fs::path contents = here.parent_path();
+    if (here.filename() == "MacOS" && contents.filename() == "Contents" && fs::is_directory(contents / "Resources")) {
+        return contents / "Resources";
+    }
+
+    return here;
 }
 
 std::string shell_quote(const std::string& text) {
@@ -492,26 +506,28 @@ int step(int index, int delta, int count) {
 }
 
 int main(int, char** argv) {
-    const fs::path here = executable_dir(argv[0]);
+    const fs::path here = executable_dir(argv[0]), resources = resource_dir(here);
     const fs::path source =
-        env("SACRED_LAUNCHER_ROOT").empty() ? here / "source" : fs::path(env("SACRED_LAUNCHER_ROOT"));
-    const std::string python = !env("SACRED_LAUNCHER_PYTHON").empty()    ? env("SACRED_LAUNCHER_PYTHON")
-                               : fs::exists(here / "python/bin/python3") ? (here / "python/bin/python3").string()
-                                                                         : "python3";
+        env("SACRED_LAUNCHER_ROOT").empty() ? resources / "source" : fs::path(env("SACRED_LAUNCHER_ROOT"));
+    const std::string python = !env("SACRED_LAUNCHER_PYTHON").empty() ? env("SACRED_LAUNCHER_PYTHON")
+                               : fs::exists(resources / "python/bin/python3")
+                                   ? (resources / "python/bin/python3").string()
+                                   : "python3";
     // Compilers in the order build_game.py tries them: the system's first, the bundled Zig after it.
     std::string compilers;
     if (!env("SACRED_LAUNCHER_CC").empty()) {
         compilers = " --cc " + shell_quote(env("SACRED_LAUNCHER_CC"));
     } else {
         compilers = " --cc " + shell_quote(env("CC").empty() ? "cc" : env("CC"));
-        if (fs::exists(here / "zig/zig")) {
-            compilers += " --cc " + shell_quote(shell_quote((here / "zig/zig").string()) + " cc");
+        if (fs::exists(resources / "zig/zig")) {
+            compilers += " --cc " + shell_quote(shell_quote((resources / "zig/zig").string()) + " cc");
         }
     }
     const fs::path script =
         !env("SACRED_LAUNCHER_GAME").empty() ? fs::path(env("SACRED_LAUNCHER_GAME")) : here / "sacred-gold";
-    const fs::path pictures = here / "menu-backgrounds";
+    const fs::path pictures = resources / "menu-backgrounds";
 
+    sacred::set_app_identity();
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::fprintf(stderr, "sacred-launcher: %s\n", SDL_GetError());
         return 1;
@@ -559,6 +575,10 @@ int main(int, char** argv) {
         return 1;
     }
     SDL_RenderSetLogicalSize(renderer, W, H);
+    // The project's logo (on macOS SDL also shows it in the Dock); without the bundle's file the default stays.
+    if (sacred::IconImage icon; sacred::load_app_icon(icon)) {
+        sacred::set_window_icon(window, icon);
+    }
     std::unique_ptr<Ui> ui;
     try {
         ui = std::make_unique<Ui>(renderer);
@@ -878,7 +898,9 @@ int main(int, char** argv) {
             if (build.worker.joinable()) {
                 build.worker.join();
             }
-            build.start(shell_quote(python) + " " + shell_quote((source / "tools/launcher/build_game.py").string()) +
+            // -B: no __pycache__ next to the translator or the bundled standard library (in the macOS app they are
+            // covered by its signature, and the app may lie where the player cannot write).
+            build.start(shell_quote(python) + " -B " + shell_quote((source / "tools/launcher/build_game.py").string()) +
                         " --assets " + shell_quote(config.game) + " --recipe " +
                         shell_quote((source / "recipe.json.gz").string()) + " --out " +
                         shell_quote(module_dir.string()) + compilers);

@@ -28,7 +28,10 @@ with `-DSACRED_QA=OFF`.
 `tools/dist/make_bundle.sh` (or `cmake --build build/game --target bundle`) builds the release bundle for the host
 system: the runtime without game code (`-DSACRED_GAME_MODULE=ON`), the launcher, the translator with the recipe, a
 Python with its standard library only, Zig as a fallback compiler and the bundled libraries with their licenses.
-Users read `tools/dist/BUNDLE_README.md` (Linux) or `tools/dist/macos/BUNDLE_README.md`.
+Users read `tools/dist/BUNDLE_README.md` (Linux) or `tools/dist/macos/BUNDLE_README.md`. On macOS the result is
+`dist/Sacred Native.app`, packed into `dist/sacred-native-macos-arm64.zip`. The logo is
+`data/icons/sacred-native-1024.png`; the bundles make the app icon from it and carry it for the windows and the Linux
+desktop entry (`data/icons/README.md`).
 The bundle ships the committed tree: the scripts refuse a working tree that differs from `HEAD`
 (`BUNDLE_ALLOW_DIRTY=1` for a local trial), take the translator sources and menu pictures from the commit, and
 check the finished archive for uncommitted files and for paths of the build machine.

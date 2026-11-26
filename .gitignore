@@ -38,6 +38,8 @@ __pycache__/
 # Except the project's split menu pictures: only pixels that differ from the game's screens (data/menu-backgrounds).
 !/data/menu-backgrounds/*.sides.png
 !/data/menu-backgrounds/*.mask.png
+# And the project's logo in its sizes (data/icons/README.md; nothing of the game).
+!/data/icons/sacred-native-*.png
 /tests/menu/qa/templates/
 /compile_commands.json
 /.cache/

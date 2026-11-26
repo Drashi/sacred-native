@@ -173,3 +173,10 @@ FreeType and the SoftFloat library) into `lib/`. On Linux, glibc, the GL/X11/Way
 client libraries stay external so they match the user's drivers; on macOS everything outside `/usr/lib` and
 `/System/Library` is bundled and ad-hoc signed. The `sacred-launcher` window (and the `sacred-gold` script) takes the installation path, keeps the
 profile in the `SDL_GetPrefPath` directory and logs there.
+On macOS the bundle is `Sacred Native.app` (in `sacred-native-macos-arm64.zip`): the executables in `Contents/MacOS`,
+the libraries in `Contents/Frameworks`, the read-only pieces in `Contents/Resources`, where the launcher and the
+script look for them when they run from `Contents/MacOS`; everything they write goes to the profile. The app carries
+the project's logo as its icon, and the launcher and the game load the same logo from the bundle for their windows
+and the Dock (`platform/app_icon.h`). The Linux bundle carries it beside a desktop entry that
+`install-desktop-entry.sh` installs for the current user; the windows' X11 class and Wayland app id
+(`sacred-native`) match the entry's `StartupWMClass`, so they group under it.

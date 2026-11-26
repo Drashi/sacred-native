@@ -84,19 +84,26 @@ bundle_source_name() {
     printf '%s\n' "${found#"$root"/}"
 }
 
-# bundle_verify TARBALL NAME: the menu pictures and the translator sources in the archive are exactly the committed
-# ones, and no file mentions the repository path or the home directory of the build machine.
+# bundle_verify ARCHIVE TOP [RESOURCES]: the menu pictures and the translator sources in the archive (a .tar.gz, or
+# a .zip of the macOS app) are exactly the committed ones, and no file mentions the repository path or the home
+# directory of the build machine. TOP is the archive's top directory, RESOURCES the directory below it that holds
+# menu-backgrounds/ and source/ (TOP itself unless given: "Sacred Native.app/Contents/Resources" for the app).
 bundle_verify() {
-    local tarball=$1 name=$2 check
+    local archive=$1 name=$2 check
+    local resources="$name${3:+/$3}"
     check="$root/build/bundle-check"
     rm -rf "$check" && mkdir -p "$check"
-    tar -C "$check" -xzf "$tarball"
+    case "$archive" in
+        *.zip) ditto -x -k "$archive" "$check" ;;
+        *) tar -C "$check" -xzf "$archive" ;;
+    esac
     local bad=0 f
-    (cd "$check/$name/menu-backgrounds" && find . -type f | sed 's|^\./||' | sort) > "$check/pictures.found"
+    (cd "$check/$resources/menu-backgrounds" && find . -type f | sed 's|^\./||' | sort) > "$check/pictures.found"
     git ls-files -- data/menu-backgrounds | sed 's|^data/menu-backgrounds/||' | sort > "$check/pictures.committed"
     cmp -s "$check/pictures.found" "$check/pictures.committed" ||
         { echo "bundle: menu-backgrounds/ differs from the committed files" >&2; bad=1; }
-    (cd "$check/$name/source" && find . -type f ! -name recipe.json.gz | sed 's|^\./||' | sort) > "$check/source.found"
+    (cd "$check/$resources/source" && find . -type f ! -name recipe.json.gz | sed 's|^\./||' | sort) \
+        > "$check/source.found"
     while IFS= read -r f; do
         git ls-files --error-unmatch -- "$f" >/dev/null 2>&1 ||
             { echo "bundle: source/$f is not a committed file" >&2; bad=1; }
@@ -104,7 +111,7 @@ bundle_verify() {
 
     if [ "${BUNDLE_ALLOW_DIRTY:-0}" != 1 ]; then
         git show HEAD:data/recipe.json.gz > "$check/recipe.committed"
-        cmp -s "$check/$name/source/recipe.json.gz" "$check/recipe.committed" ||
+        cmp -s "$check/$resources/source/recipe.json.gz" "$check/recipe.committed" ||
             { echo "bundle: source/recipe.json.gz is not the committed recipe" >&2; bad=1; }
     fi
 
@@ -115,7 +122,15 @@ bundle_verify() {
         bad=1
     fi
 
+    # The macOS app as the player unpacks it: its signature still holds (nothing in the archive but the app).
+    if [ "${name%.app}" != "$name" ]; then
+        codesign --verify --deep --strict "$check/$name" ||
+            { echo "bundle: the unpacked app's signature does not verify" >&2; bad=1; }
+        [ "$(ls -A "$check" | grep -v -e '\.found$' -e '\.committed$')" = "$name" ] ||
+            { echo "bundle: the archive holds more than $name" >&2; bad=1; }
+    fi
+
     rm -rf "$check"
     [ "$bad" = 0 ] || exit 1
-    echo "BUNDLE_VERIFIED $tarball"
+    echo "BUNDLE_VERIFIED $archive"
 }

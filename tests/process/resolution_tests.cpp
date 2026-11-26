@@ -282,7 +282,8 @@ int main() {
     EXPECT((sacred::fullscreen_window_origin({0, 0, 1512, 982}, 1512, 949) == std::pair<int, int>{0, 33}));
     EXPECT((sacred::fullscreen_window_origin({0, 0, 1512, 982}, 1512, 982) == std::pair<int, int>{0, 0}));
     EXPECT((sacred::fullscreen_window_origin({1512, 0, 1920, 1080}, 1920, 1080) == std::pair<int, int>{1512, 0}));
-    EXPECT((sacred::fullscreen_window_origin({-1920, -200, 1920, 1080}, 1920, 1080) == std::pair<int, int>{-1920, -200}));
+    EXPECT(
+        (sacred::fullscreen_window_origin({-1920, -200, 1920, 1080}, 1920, 1080) == std::pair<int, int>{-1920, -200}));
     EXPECT((sacred::fullscreen_window_origin({0, 0, 1512, 982}, 1600, 1000) == std::pair<int, int>{0, 0}));
     // Settings.cfg switches: any value but 0 turns one on, the last line wins, unknown keys are ignored.
     using sacred::parse_option_settings;

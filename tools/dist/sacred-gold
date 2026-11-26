@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Launcher for the native Sacred Gold port (shipped at the bundle root next to `sacred-native` and `lib/`).
+# Launcher for the native Sacred Gold port (shipped at the bundle root next to `sacred-native` and `lib/`; in the
+# macOS app Contents/MacOS/sacred-gold is a link to Contents/Resources/sacred-gold).
 set -uo pipefail
 # Resolve symlinks without readlink -f (absent before macOS 12.3).
 self="${BASH_SOURCE[0]}"
@@ -9,6 +10,13 @@ while [ -L "$self" ]; do
 done
 
 here="$(cd "$(dirname "$self")" && pwd)"
+# The executables (bin) and the read-only pieces (res: source/, python/, zig/): one directory in the flat bundle,
+# Contents/MacOS and Contents/Resources in the macOS app.
+bin="$here" res="$here"
+case "$here" in
+    */Contents/MacOS) [ -d "$here/../Resources/source" ] && res="$(cd "$here/../Resources" && pwd)" ;;
+    */Contents/Resources) [ -x "$here/../MacOS/sacred-native" ] && bin="$(cd "$here/../MacOS" && pwd)" ;;
+esac
 os="$(uname -s)"
 # Same directory as SDL_GetPrefPath("Sacred Native", "Sacred Gold") in the engine.
 if [ "$os" = Darwin ]; then default_profile="$HOME/Library/Application Support/Sacred Native/Sacred Gold"
@@ -143,13 +151,14 @@ echo "sacred-gold: log:          $log"
 # bundled Zig (sacred-launcher shows the same build with a progress bar). An up-to-date module is reused at once.
 given_module=0
 for arg in ${extra[@]+"${extra[@]}"}; do [ "$arg" = --game-module ] && given_module=1; done
-if [ -d "$here/source" ] && [ "$given_module" = 0 ]; then
+if [ -d "$res/source" ] && [ "$given_module" = 0 ]; then
     module_dir="$(dirname "$profile")/game-module"
     echo "sacred-gold: preparing the game code in $module_dir (the first time takes a few minutes)"
     status_file="$module_dir.status"
     mkdir -p "$module_dir"
-    { "$here/python/bin/python3" -I "$here/source/tools/launcher/build_game.py" --assets "$game" \
-        --recipe "$here/source/recipe.json.gz" --out "$module_dir" --cc "${CC:-cc}" --cc "'$here/zig/zig' cc"
+    # -B: no __pycache__ next to the bundled translator and standard library (inside the macOS app's signature).
+    { "$res/python/bin/python3" -I -B "$res/source/tools/launcher/build_game.py" --assets "$game" \
+        --recipe "$res/source/recipe.json.gz" --out "$module_dir" --cc "${CC:-cc}" --cc "'$res/zig/zig' cc"
       echo $? > "$status_file"; } |
     while read -r kind rest; do
         case "$kind" in
@@ -171,7 +180,7 @@ if [ -d "$here/source" ] && [ "$given_module" = 0 ]; then
 fi
 
 # ${extra[@]+...}: bash 3.2 (macOS /bin/bash) treats an empty array as unset under set -u.
-"$here/sacred-native" --assets "$game" --profile "$profile" ${extra[@]+"${extra[@]}"} > "$log" 2>&1
+"$bin/sacred-native" --assets "$game" --profile "$profile" ${extra[@]+"${extra[@]}"} > "$log" 2>&1
 rc=$?
 if [ $rc -ne 0 ]; then
     echo "sacred-gold: sacred-native exited with status $rc; see $log" >&2

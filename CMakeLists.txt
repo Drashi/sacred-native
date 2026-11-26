@@ -299,7 +299,7 @@ else()
 endif()
 add_library(sacred_window STATIC platform/window_host.cpp platform/renderer_gl.cpp platform/font.cpp
     platform/font_match.cpp
-    platform/fvf.cpp)
+    platform/fvf.cpp platform/app_icon.cpp)
 target_include_directories(sacred_window PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(sacred_window PUBLIC PkgConfig::SDL2 OpenGL::GL PRIVATE PkgConfig::FONTS)
 target_compile_options(sacred_window PRIVATE -Wall -Wextra -Werror ${SACRED_RUNTIME_OPT} -g1)

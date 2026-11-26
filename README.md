@@ -20,11 +20,16 @@ any byte of the game.
 ## Download and play
 
 1. Download the bundle for your system from the releases page and unpack it.
-   - **macOS:** remove the download quarantine once: `xattr -dr com.apple.quarantine sacred-native-macos-arm64`
-     (the binaries are signed ad hoc, not notarized).
-2. Start `./sacred-launcher`. It finds your installation (or lets you pick its folder), checks the version, and
-   starts the game with **Play**. The first Play builds the game module; later starts are immediate.
-3. From a terminal the same works with `./sacred-gold "/path/to/Sacred Gold"`.
+   - **macOS:** `sacred-native-macos-arm64.zip` holds `Sacred Native.app`. Drag it to Applications, then remove the
+     download quarantine once: `xattr -dr com.apple.quarantine "/Applications/Sacred Native.app"` (the app is signed
+     ad hoc, not notarized).
+2. Start the launcher: **Sacred Native** on macOS, `./sacred-launcher` on Linux. It finds your installation (or lets
+   you pick its folder), checks the version, and starts the game with **Play**. The first Play builds the game module;
+   later starts are immediate.
+   - **Linux:** `./install-desktop-entry.sh` adds Sacred Native with its icon to your desktop's application menu
+     (for your user only; `--uninstall` removes it again, run it again after moving the folder).
+3. From a terminal the same works with `sacred-gold "/path/to/Sacred Gold"`: `./sacred-gold` on Linux,
+   `"/Applications/Sacred Native.app/Contents/MacOS/sacred-gold"` on macOS.
 
 Settings and saves live in your profile: `~/Library/Application Support/Sacred Native/Sacred Gold` on macOS,
 `~/.local/share/Sacred Native/Sacred Gold` on Linux. The log is `sacred-native.log` in the same folder.

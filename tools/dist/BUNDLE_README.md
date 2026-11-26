@@ -7,6 +7,16 @@ no game data is part of this download and the installation is only ever read.
 
     ./sacred-launcher
 
+To start it from your desktop's application menu instead, add it there once (for your user only, nothing outside your
+home directory):
+
+    ./install-desktop-entry.sh               # ~/.local/share/applications/sacred-native.desktop and the logo
+    ./install-desktop-entry.sh --uninstall   # removes both again
+
+The entry starts this folder's `sacred-launcher` by its full path: run the script again after moving or replacing
+the folder. The launcher's and the game's windows belong to that entry (window class and Wayland app id
+`sacred-native`), so the dock or task bar shows them under its icon.
+
 The launcher window finds your installation (or lets you choose its folder), checks that it is Sacred Gold 2.28
 (English, GOG or Steam) and starts the game with **Play**. Its **Settings** page holds this port's options (display
 mode, screen size, frame rate limit, the original Sacred look, render scale, HD textures), each with a line on what
@@ -130,8 +140,8 @@ and may start with `~/`, and a relative one is read from the working directory, 
 ## Contents and dependencies
 
 * `sacred-launcher` (window), `sacred-gold` (terminal), `sacred-native` (the runtime; it loads the game module built
-  on your machine), `lib/` (see `lib/BUNDLED_LIBRARIES.txt`), `source/`, `python/`, `zig/`, `menu-backgrounds/`, `tools/`,
-  `licenses/`.
+  on your machine), `install-desktop-entry.sh`, `lib/` (see `lib/BUNDLED_LIBRARIES.txt`), `source/`, `python/`, `zig/`,
+  `menu-backgrounds/`, `icons/` (the logo), `desktop/` (the desktop entry's template), `tools/`, `licenses/`.
 * Bundled: FFmpeg (LGPL, WMV/WMA only), SDL2 (zlib), FreeType (FTL), the Bochs softfloat library (LGPL-2.1+), Zig (MIT)
   and CPython (PSF) for the first-start build.
 * From the system: glibc, libstdc++, zlib and the usual desktop libraries (OpenGL/EGL, X11 or Wayland, PulseAudio or

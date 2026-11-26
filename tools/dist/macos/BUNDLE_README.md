@@ -6,9 +6,14 @@ download and the installation is only ever read.
 
 ## Run
 
-    xattr -dr com.apple.quarantine sacred-native-macos-arm64   # once, after extracting a downloaded archive
-    ./sacred-launcher                                           # a window: installation, Settings page, Play
-    ./sacred-gold "/path/to/Sacred Gold"                        # the same from a terminal
+`sacred-native-macos-arm64.zip` holds `Sacred Native.app`. Drag it to Applications (or anywhere else), then:
+
+    xattr -dr com.apple.quarantine "/Applications/Sacred Native.app"   # once, after unpacking the download
+    open "/Applications/Sacred Native.app"     # or double-click it: installation, Settings page, Play
+    "/Applications/Sacred Native.app/Contents/MacOS/sacred-gold" "/path/to/Sacred Gold"   # from a terminal
+
+The app, its windows and the Dock show the Sacred Native logo. Nothing of the game is part of the app, and nothing is
+ever written into it.
 
 The launcher's **Settings** page holds this port's options (display mode, screen size, frame rate limit, the original
 Sacred look, render scale, HD textures), each with a line on what it does; a change is written into the profile's
@@ -21,7 +26,7 @@ and the system's clang (Xcode's command line tools), or the bundled Zig when the
 an Apple M-series machine, into
 `~/Library/Application Support/Sacred Native/game-module/libsacred_game.dylib`. Later starts reuse it at once.
 
-The binaries are ad-hoc signed, not notarized, so Gatekeeper blocks them while the download quarantine flag is set.
+The app is ad-hoc signed, not notarized, so Gatekeeper blocks it while the download quarantine flag is set.
 
 The path is remembered. Without an argument the launcher tries `$SACRED_GOLD_DIR`, the remembered path and common
 locations (`~/Games`, `~/Applications`, `/Applications`, CrossOver bottles' `drive_c`), and otherwise prints how to pass it.
@@ -127,12 +132,15 @@ and may start with `~/`, and a relative one is read from the working directory, 
 
 ## Contents and dependencies
 
-* `sacred-launcher` (window), `sacred-gold` (terminal), `sacred-native` (the runtime; it loads the game module built
-  on your machine), `lib/` (see `lib/BUNDLED_LIBRARIES.txt`), `source/`, `python/`, `zig/`, `menu-backgrounds/`, `tools/`,
-  `licenses/`.
+* `Contents/MacOS`: `sacred-launcher` (the window the app starts), `sacred-gold` (terminal; a link to
+  `Contents/Resources/sacred-gold`), `sacred-native` (the runtime; it loads the game module built on your machine).
+  `Contents/Frameworks`: the libraries (see `Contents/Resources/licenses/BUNDLED_LIBRARIES.txt`).
+  `Contents/Resources`: `source/`, `python/`, `zig/`, `menu-backgrounds/`, `tools/`, `licenses/`, this file.
 * Bundled: FFmpeg (LGPL, WMV/WMA only), SDL2 (zlib), FreeType (FTL), the Bochs softfloat library (LGPL-2.1+), Zig (MIT)
   and CPython (PSF) for the first-start build. Everything else comes from macOS itself.
 
-FFmpeg is linked dynamically: `lib/libav*.dylib` and `lib/libsw*.dylib` can be replaced by your own build of the same
-install names (`@rpath/...`); re-sign them afterwards with `codesign --force --sign - lib/*.dylib`. Its source and
-the script that built these libraries are in `licenses/` (`ffmpeg-*.tar.xz`, `ffmpeg-build.sh`).
+FFmpeg is linked dynamically: `Contents/Frameworks/libav*.dylib` and `libsw*.dylib` there can be replaced by your own
+build of the same install names (`@rpath/...`); re-sign them and then the app afterwards
+(`codesign --force --sign - Contents/Frameworks/*.dylib`, then `codesign --force --sign - "Sacred Native.app"`).
+Its source and the script that built these libraries are in `Contents/Resources/licenses/` (`ffmpeg-*.tar.xz`,
+`ffmpeg-build.sh`).

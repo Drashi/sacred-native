@@ -1,23 +1,34 @@
 #!/usr/bin/env bash
-# Builds the self-contained macOS Apple Silicon bundle: dist/sacred-native-macos-arm64/ and
-# dist/sacred-native-macos-arm64.tar.gz.
+# Builds the self-contained macOS Apple Silicon app: "dist/Sacred Native.app" and dist/sacred-native-macos-arm64.zip
+# (the app alone, as ditto packs it).
 #   tools/dist/make_bundle_macos.sh [--no-build]      (tools/dist/make_bundle.sh dispatches here on macOS)
 # Env: JOBS, DIST_BUILD_DIR (default build/dist), SACRED_FFMPEG_PREFIX (default build/ffmpeg/prefix),
 #      SACRED_MACOS_DEPS (default build/macos-deps/prefix),
 #      RECIPE (a recipe other than the committed data/recipe.json.gz; local trials only, with BUNDLE_ALLOW_DIRTY=1),
-#      BUNDLE_ZIG=0 (leave the fallback compiler out: the player then needs Xcode's command line tools).
+#      BUNDLE_ZIG=0 (leave the fallback compiler out: the player then needs Xcode's command line tools),
+#      SACRED_VERSION (the app's version; default: the latest tag v*).
 #
 # The same scheme as the Linux bundle (make_bundle.sh): no code and no data of the game. The runtime (sacred-native,
 # built with SACRED_GAME_MODULE), the launcher window (sacred-launcher), the translator with its recipe and headers
 # (source/), the Python it runs on (python/: the standard library only) and Zig for Macs without Xcode's command line
 # tools (zig/); the launcher builds the game module (libsacred_game.dylib) from the player's own files on the first
 # Play, with the system's clang when there is one.
+#
+# Layout of the app: Contents/MacOS holds the executables (sacred-launcher, which the app starts, sacred-native, and
+# sacred-gold as a link to Contents/Resources/sacred-gold: a script there is no code object codesign can seal),
+# Contents/Frameworks the libraries (run path @executable_path/../Frameworks), Contents/Resources everything read-only
+# (source/, python/, zig/, menu-backgrounds/, icons/, tools/, licenses/, README.md) and the app icon, made from the
+# project's logo (data/icons/sacred-native-1024.png); the windows and the Dock show the same logo
+# (icons/sacred-native-512.png, platform/app_icon.h). Nothing is ever written into the app. Every Mach-O file (the
+# bundled Python and Zig too) and then the app are signed ad hoc.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 root=$PWD
 source tools/dist/bundle_common.sh
 name=sacred-native-macos-arm64
-out=dist/$name
+app_name="Sacred Native.app"
+app="dist/$app_name"
+bin="$app/Contents/MacOS" frameworks="$app/Contents/Frameworks" out="$app/Contents/Resources"
 build="${DIST_BUILD_DIR:-build/dist}"
 ffmpeg="${SACRED_FFMPEG_PREFIX:-$root/build/ffmpeg/prefix}"
 deps="${SACRED_MACOS_DEPS:-$root/build/macos-deps/prefix}"
@@ -63,10 +74,11 @@ fi
 
 for exe in sacred-native sacred-launcher; do [ -x "$build/$exe" ] || { echo "missing $build/$exe" >&2; exit 1; }; done
 
-rm -rf "$out" "dist/$name.tar.gz"
-mkdir -p "$out/lib" "$out/licenses"
-cp "$build/sacred-native" "$build/sacred-launcher" "$out/"
+rm -rf "$app" "dist/$name.zip" "dist/$name" "dist/$name.tar.gz"
+mkdir -p "$bin" "$frameworks" "$out/licenses"
+cp "$build/sacred-native" "$build/sacred-launcher" "$bin/"
 install -m 755 tools/dist/sacred-gold "$out/sacred-gold"
+ln -s ../Resources/sacred-gold "$bin/sacred-gold"
 install -d "$out/tools" && install -m 755 tools/legacy_char_pak.py "$out/tools/legacy_char_pak.py"
 # The project's wide menu pictures, split: only the pixels that differ from the game's screens, and the hashes of
 # the composed pictures (data/menu-backgrounds/composed.sha256), as committed.
@@ -79,7 +91,7 @@ deps_of() { otool -L "$1" | awk 'NR>1 {print $1}' | grep -v "^$(otool -D "$1" | 
 # /bin/bash on macOS is 3.2: no associative arrays, so sonames and their sources are parallel indexed arrays.
 sonames=() sources=()
 bundled() { local s; for s in ${sonames[@]+"${sonames[@]}"}; do [ "$s" = "$1" ] && return 0; done; return 1; }
-queue=("$out/sacred-native" "$out/sacred-launcher")
+queue=("$bin/sacred-native" "$bin/sacred-launcher")
 while [ ${#queue[@]} -gt 0 ]; do
     file=${queue[0]}; queue=("${queue[@]:1}")
     while read -r dep; do
@@ -92,36 +104,43 @@ while [ ${#queue[@]} -gt 0 ]; do
         bundled "$soname" && continue
         path=$(locate "$soname") || { echo "ERROR: cannot find $soname (needed by $file)" >&2; exit 1; }
         real=$(realpath "$path")
-        install -m 755 "$real" "$out/lib/$soname"
+        install -m 755 "$real" "$frameworks/$soname"
         sonames+=("$soname"); sources+=("$path")
-        queue+=("$out/lib/$soname")
+        queue+=("$frameworks/$soname")
     done < <(deps_of "$file")
 done
 
 [ "${#sonames[@]}" -gt 0 ] || { echo "no libraries bundled?" >&2; exit 1; }
 
-# Only @executable_path/lib may remain as a run path; then strip and ad-hoc sign (arm64 refuses unsigned code).
+# The executables are linked with the run path of the flat bundle (@executable_path/lib, SACRED_RELOCATABLE); in the
+# app it is @executable_path/../Frameworks, and only that may remain. Then strip and ad-hoc sign (arm64 refuses
+# unsigned code).
+app_rpath=@executable_path/../Frameworks
 rpaths() { otool -l "$1" | awk '/cmd LC_RPATH/ {getline; getline; print $2}'; }
-for f in "$out/sacred-native" "$out/sacred-launcher" "$out"/lib/*.dylib; do
+for f in "$bin/sacred-native" "$bin/sacred-launcher" "$frameworks"/*.dylib; do
     while read -r rp; do
         [ -n "$rp" ] || continue
-        case "$f" in "$out/sacred-native"|"$out/sacred-launcher") [ "$rp" = @executable_path/lib ] && continue ;; esac
+        case "$f" in
+            "$bin/sacred-native" | "$bin/sacred-launcher")
+                if [ "$rp" = @executable_path/lib ]; then install_name_tool -rpath "$rp" "$app_rpath" "$f"; continue; fi
+                [ "$rp" = "$app_rpath" ] && continue ;;
+        esac
         install_name_tool -delete_rpath "$rp" "$f"
     done < <(rpaths "$f")
     # The runtime's symbol table is what the game module links against at load time (-undefined dynamic_lookup):
     # strip only debug symbols from it.
-    if [ "$f" = "$out/sacred-native" ]; then strip -S "$f"; else strip -x "$f" 2>/dev/null || strip -S "$f"; fi
+    if [ "$f" = "$bin/sacred-native" ]; then strip -S "$f"; else strip -x "$f" 2>/dev/null || strip -S "$f"; fi
     codesign --force --sign - "$f"
 done
 
 for exe in sacred-native sacred-launcher; do
-    if [ "$(rpaths "$out/$exe")" != @executable_path/lib ]; then
-        echo "unexpected LC_RPATH of $exe: $(rpaths "$out/$exe")" >&2
+    if [ "$(rpaths "$bin/$exe")" != "$app_rpath" ]; then
+        echo "unexpected LC_RPATH of $exe: $(rpaths "$bin/$exe")" >&2
         exit 1
     fi
 done
 
-nm -gU "$out/sacred-native" | grep ' _recomp_unknown_jump$' >/dev/null ||
+nm -gU "$bin/sacred-native" | grep ' _recomp_unknown_jump$' >/dev/null ||
     { echo "sacred-native does not export the helpers the game module needs" >&2; exit 1; }
 
 # The translator and what the generated code compiles against (our GPL-3.0-or-later code, the vendored recomp-kit,
@@ -175,7 +194,7 @@ ZIG_GLOBAL_CACHE_DIR="$zig_check/cache" ZIG_LOCAL_CACHE_DIR="$zig_check/cache" \
 fi
 
 # Self-containment: no absolute paths outside the OS in any load command, and dyld resolves everything.
-for f in "$out/sacred-native" "$out/sacred-launcher" "$out"/lib/*.dylib; do
+for f in "$bin/sacred-native" "$bin/sacred-launcher" "$frameworks"/*.dylib; do
     if otool -L "$f" | awk 'NR>1 {print $1}' | grep -vE '^(/usr/lib/|/System/Library/|@rpath/)'; then
         echo "ERROR: non-relocatable load command in $f" >&2; exit 1
     fi
@@ -191,8 +210,9 @@ newer_than_target() { # version -> true when it is above $MACOSX_DEPLOYMENT_TARG
         split(have, h, "."); split(want, w, ".")
         exit !(h[1] + 0 > w[1] + 0 || (h[1] + 0 == w[1] + 0 && h[2] + 0 > w[2] + 0)) }'
 }
-for f in "$out/sacred-native" "$out/sacred-launcher" "$out"/lib/*.dylib "$out/python/bin/python3" \
-         $( [ -d "$out/zig" ] && echo "$out/zig/zig" ); do
+shipped=("$bin/sacred-native" "$bin/sacred-launcher" "$frameworks"/*.dylib "$out/python/bin/python3")
+[ -d "$out/zig" ] && shipped+=("$out/zig/zig")
+for f in "${shipped[@]}"; do
     minos=$(minos_of "$f")
     [ -n "$minos" ] || { echo "ERROR: no minimum macOS version in $f" >&2; exit 1; }
     if newer_than_target "$minos"; then
@@ -202,7 +222,7 @@ for f in "$out/sacred-native" "$out/sacred-launcher" "$out"/lib/*.dylib "$out/py
 done
 # Load test: dyld binds every library before main; without --assets the engine prints its usage and exits with 2.
 rc=0; env -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH DYLD_PRINT_LIBRARIES=1 \
-    "$out/sacred-native" --stop-at-winmain >/dev/null 2>"$build/dyld.log" || rc=$?
+    "$bin/sacred-native" --stop-at-winmain >/dev/null 2>"$build/dyld.log" || rc=$?
 if [ "$rc" != 2 ]; then
     echo "ERROR: bundled sacred-native failed to start (status $rc):" >&2
     cat "$build/dyld.log" >&2
@@ -262,7 +282,8 @@ done
 [ "$missing_license" = 0 ] || { echo "make_bundle_macos.sh: bundle license check failed" >&2; exit 1; }
 
 # Nothing of the game: no generated C, no export, no game file names besides the ones the runtime looks up.
-if find "$out" -name 'sacred_[0-9]*.c' -o -name '*.jsonl.gz' -o -iname 'Sacred.exe' | grep . >/dev/null; then
+if find "$app" -name 'sacred_[0-9]*.c' -o -name '*.jsonl.gz' -o -iname 'Sacred.exe' -o -iname '*.ico' \
+    -o -iname '*.icns' -o -iname '*.iconset' | grep . >/dev/null; then
     echo "make_bundle_macos.sh: game-derived files in the bundle" >&2; exit 1
 fi
 
@@ -272,10 +293,97 @@ cp tools/dist/macos/BUNDLE_README.md "$out/README.md"
   done | sort
   python_version=$(basename "$python_url" | sed 's/%2B/+/' | cut -d- -f2)
   echo "Tools: CPython $python_version (standard library only)$( [ -d "$out/zig" ] && echo ", zig $zig_version")"; } \
-    > "$out/lib/BUNDLED_LIBRARIES.txt"
+    > "$out/licenses/BUNDLED_LIBRARIES.txt"
 
-# bsdtar: deterministic ownership; exclude macOS metadata (._* files, xattrs).
-COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --uname root --gname wheel --no-xattrs -C dist -czf "dist/$name.tar.gz" "$name"
-du -sh "$out" "dist/$name.tar.gz"
-bundle_verify "dist/$name.tar.gz" "$name"
-echo "BUNDLE_OK dist/$name.tar.gz"
+# The app icon (checked above: no other icon is in the app), from the project's logo (data/icons), whose round
+# medallion is about 917 of 1024 pixels wide. macOS 26 shows every app icon as a rounded square and puts any other
+# shape on a grey one, so where actool knows Icon Composer icons (Xcode 26 or newer) the logo becomes the layer of
+# one (tools/dist/macos/AppIcon.icon.json: the medallion at 0.81 on a dark graphite fill): actool compiles it into
+# Assets.car (CFBundleIconName) and an AppIcon.icns for older systems. Otherwise the .icns is the round logo alone:
+# scaled to 948 pixels (the medallion to about 850) and centred on a transparent 1024-pixel canvas, every size of an
+# .iconset made from that by sips and packed by iconutil (macOS 26 then shows it on the grey square).
+# The launcher and the game show that round picture at 512 pixels as window and Dock icon at run time
+# (Contents/Resources/icons, platform/app_icon.h).
+iconset="$build/AppIcon.iconset" logo="$build/AppIcon-1024.png" composer="$build/AppIcon.icon"
+rm -rf "$iconset" "$composer" "$build/AppIcon-car"
+mkdir -p "$iconset" "$out/icons" "$composer/Assets" "$build/AppIcon-car"
+sips -z 948 948 data/icons/sacred-native-1024.png --out "$build/AppIcon-948.png" >/dev/null
+sips -p 1024 1024 "$build/AppIcon-948.png" --out "$logo" >/dev/null
+sips -z 512 512 "$logo" --out "$out/icons/sacred-native-512.png" >/dev/null
+cp tools/dist/macos/AppIcon.icon.json "$composer/icon.json"
+cp data/icons/sacred-native-1024.png "$composer/Assets/logo.png"
+icon_name=
+if xcrun actool "$composer" --compile "$build/AppIcon-car" --app-icon AppIcon --platform macosx \
+       --minimum-deployment-target "$MACOSX_DEPLOYMENT_TARGET" --output-partial-info-plist "$build/AppIcon-car.plist" \
+       >"$build/actool.log" 2>&1 && [ -s "$build/AppIcon-car/Assets.car" ] && [ -s "$build/AppIcon-car/AppIcon.icns" ]
+then
+    cp "$build/AppIcon-car/Assets.car" "$build/AppIcon-car/AppIcon.icns" "$out/"
+    icon_name=AppIcon
+else
+    echo "WARNING: actool cannot compile an Icon Composer icon (Xcode 26 or newer needed, see $build/actool.log):" \
+         "the app gets the round icon, which macOS 26 shows on a grey square" >&2
+    for size in 16 32 128 256 512; do
+        sips -z "$size" "$size" "$logo" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+        sips -z $((size * 2)) $((size * 2)) "$logo" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+    done
+    iconutil -c icns "$iconset" -o "$out/AppIcon.icns"
+fi
+
+# The version: SACRED_VERSION, else the latest tag v<major>.<minor>.<patch>, as the numbers macOS expects.
+version="${SACRED_VERSION:-$(git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || true)}"
+version="$(printf '%s\n' "${version#v}" | sed -nE 's/^([0-9]+(\.[0-9]+){0,2}).*/\1/p')"
+version="${version:-0.0.0}"
+cat > "$app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Sacred Native</string>
+    <key>CFBundleExecutable</key>
+    <string>sacred-launcher</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>${icon_name:+
+    <key>CFBundleIconName</key>
+    <string>$icon_name</string>}
+    <key>CFBundleIdentifier</key>
+    <string>io.github.sacred-native</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Sacred Native</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$version</string>
+    <key>CFBundleVersion</key>
+    <string>$version</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.role-playing-games</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>$MACOSX_DEPLOYMENT_TARGET</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+plutil -lint "$app/Contents/Info.plist" >/dev/null
+printf 'APPL????' > "$app/Contents/PkgInfo"
+
+# Signing: every Mach-O file of the bundled Python and Zig (the executables and libraries were signed above), then
+# the app, which seals everything in it: nothing may change inside the app afterwards.
+find "$out/python" "$out/zig" -type f \( -perm -u+x -o -name '*.so' -o -name '*.dylib' \) 2>/dev/null |
+    while IFS= read -r f; do
+        case "$(file -b "$f")" in Mach-O*) codesign --force --sign - "$f" ;; esac
+    done
+xattr -cr "$app"
+codesign --force --sign - "$app"
+codesign --verify --deep --strict "$app" || { echo "ERROR: the app's signature does not verify" >&2; exit 1; }
+
+# ditto: the archive Finder makes, without extended attributes, resource forks or quarantine flags (no ._* files).
+ditto -c -k --keepParent --norsrc --noextattr --noqtn --noacl "$app" "dist/$name.zip"
+du -sh "$app" "dist/$name.zip"
+bundle_verify "dist/$name.zip" "$app_name" Contents/Resources
+echo "BUNDLE_OK dist/$name.zip"

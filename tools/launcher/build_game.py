@@ -156,7 +156,9 @@ def main() -> int:
         generated = out / "generated"
         env = dict(os.environ, SACRED_ASSETS=str(args.assets), SACRED_RECIPE=str(args.recipe.resolve()),
                    SACRED_GENERATED_DIR=str(generated))
-        result = subprocess.run([sys.executable, str(ROOT / "tools/lift/generate.py")], env=env,
+        # -B passes on (the launchers run this with it): no __pycache__ inside the bundle or the macOS app.
+        no_bytecode = ["-B"] if sys.dont_write_bytecode else []
+        result = subprocess.run([sys.executable, *no_bytecode, str(ROOT / "tools/lift/generate.py")], env=env,
                                 capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError("translation failed:\n" + (result.stderr or result.stdout)[-2000:])

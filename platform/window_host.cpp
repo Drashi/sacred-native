@@ -49,9 +49,13 @@ void WindowHost::video() {
         return;
     }
 
+    set_app_identity();
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         throw GuestFault(std::string("SDL video initialization failed: ") + SDL_GetError());
     }
+
+    // The project's logo for every window (and on macOS the Dock); without the bundle's file the guest's icon.
+    load_app_icon(app_icon_);
 
     std::fprintf(stderr, "SDL_VIDEO driver=%s\n", SDL_GetCurrentVideoDriver());
     std::lock_guard<std::mutex> lock(mutex_);
@@ -377,7 +381,9 @@ uint32_t WindowHost::create_window(const std::string& title, int x, int y, int w
         id = SDL_GetWindowID(window);
         windows_.emplace(id, window);
         logical_[id] = {x, y, width, height, false};
-        if (!icon.empty()) {
+        if (!app_icon_.rgba.empty()) {
+            set_window_icon(window, app_icon_);
+        } else if (!icon.empty()) {
             auto* surface = SDL_CreateRGBSurfaceWithFormat(0, icon_width, icon_height, 32, SDL_PIXELFORMAT_RGBA32);
             if (!surface) {
                 throw GuestFault("cannot allocate window icon surface");

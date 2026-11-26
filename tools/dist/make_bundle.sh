@@ -83,6 +83,17 @@ for exe in sacred-native sacred-launcher; do
 done
 
 install -m 755 tools/dist/sacred-gold "$out/sacred-gold"
+# The project's logo (the windows' icon, platform/app_icon.h, and the desktop entry's) and the desktop entry, which
+# install-desktop-entry.sh adds to the player's application menu on request (nothing is installed by default).
+install -d "$out/icons" "$out/desktop"
+install -m 644 data/icons/sacred-native-256.png data/icons/sacred-native-512.png "$out/icons/"
+install -m 644 tools/dist/linux/sacred-native.desktop "$out/desktop/sacred-native.desktop"
+install -m 755 tools/dist/linux/install-desktop-entry.sh "$out/install-desktop-entry.sh"
+if command -v desktop-file-validate >/dev/null; then
+    sed 's|^Exec=@LAUNCHER@$|Exec=sacred-launcher|' tools/dist/linux/sacred-native.desktop \
+        > "$build/sacred-native.desktop"
+    desktop-file-validate "$build/sacred-native.desktop"
+fi
 install -d "$out/tools" && install -m 755 tools/legacy_char_pak.py "$out/tools/legacy_char_pak.py"
 
 declare -A source_of

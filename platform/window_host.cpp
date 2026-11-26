@@ -590,6 +590,28 @@ HostWindowState WindowHost::window_state(uint32_t id) {
     return state;
 }
 
+// Host thread only. The client area's top-left corner in SDL's global coordinates, as the pointer positions of
+// SDL_GetGlobalMouseState: for a fullscreen window not where SDL_GetWindowPosition puts it (the display's origin)
+// but below a camera notch's menu bar strip when the window is lower than the display.
+void WindowHost::window_origin(SDL_Window* window, int& x, int& y) {
+    SDL_GetWindowPosition(window, &x, &y);
+    if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN)) {
+        return;
+    }
+
+    const int index = SDL_GetWindowDisplayIndex(window);
+    SDL_Rect bounds{};
+    if (index < 0 || SDL_GetDisplayBounds(index, &bounds)) {
+        return;
+    }
+
+    int width = 0, height = 0;
+    SDL_GetWindowSize(window, &width, &height);
+    const auto origin = fullscreen_window_origin({bounds.x, bounds.y, bounds.w, bounds.h}, width, height);
+    x = origin.first;
+    y = origin.second;
+}
+
 // Host thread only.
 HostWindowState WindowHost::host_window_state(uint32_t id) {
     HostWindowState state{};
@@ -976,7 +998,7 @@ void WindowHost::pump(const SDL_Event* initial) {
                     if (SDL_Window* native = SDL_GetWindowFromID(event.window)) {
                         int width = 0, height = 0, origin_x = 0, origin_y = 0;
                         SDL_GetWindowSize(native, &width, &height);
-                        SDL_GetWindowPosition(native, &origin_x, &origin_y);
+                        window_origin(native, origin_x, origin_y);
                         // Host positions are in the host window; the guest works in its own client area, which
                         // presentation letterboxes into the host window (identity when the sizes agree).
                         int guest_width = width, guest_height = height;

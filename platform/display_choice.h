@@ -1,6 +1,8 @@
 #pragma once
+#include <algorithm>
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace sacred {
@@ -37,6 +39,14 @@ inline DisplayChoice choose_display(const std::vector<DisplayRect>& displays, in
         }
     }
     return choice;
+}
+
+// Where a fullscreen window's client area starts in SDL's global coordinates. SDL_GetWindowPosition reports the
+// display's origin for every fullscreen window, but on a display with a camera notch (macOS) the window covers only
+// the part below the menu bar strip: it is as wide as the display and ends at its bottom edge, so it starts lower by
+// the difference in height. A window as large as the display starts at the display's origin.
+inline std::pair<int, int> fullscreen_window_origin(const DisplayRect& display, int width, int height) {
+    return {display.x + std::max(0, display.width - width) / 2, display.y + std::max(0, display.height - height)};
 }
 
 // A display number as written by the player: "2" -> 2; anything else (empty, "auto", "0", garbage) -> 0 (automatic).

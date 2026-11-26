@@ -204,6 +204,8 @@ private:
     std::atomic<int> preferred_display_{0};
     // SDL thread only: the chosen display (SDL index) and its origin in SDL's global coordinates.
     void select_display();
+    // SDL thread only: a window's client origin in SDL's global coordinates (fullscreen: below a notch's strip).
+    void window_origin(SDL_Window* window, int& x, int& y);
     bool display_selected_ = false;
     int display_ = 0, display_x_ = 0, display_y_ = 0;
     static constexpr uint32_t injected_pointer = 0x51a0c0de;

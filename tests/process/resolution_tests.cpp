@@ -277,6 +277,14 @@ int main() {
     EXPECT(choice.index == 0);
     choice = sacred::choose_display(displays, 0, true, -1, 0);
     EXPECT(choice.index == 1);
+    // Fullscreen client origin: below the notch's menu bar strip (1512x982 display, 1512x949 window), the display's
+    // origin for a window as large as the display, the display's own origin on a second display.
+    EXPECT((sacred::fullscreen_window_origin({0, 0, 1512, 982}, 1512, 949) == std::pair<int, int>{0, 33}));
+    EXPECT((sacred::fullscreen_window_origin({0, 0, 1512, 982}, 1512, 982) == std::pair<int, int>{0, 0}));
+    EXPECT((sacred::fullscreen_window_origin({1512, 0, 1920, 1080}, 1920, 1080) == std::pair<int, int>{1512, 0}));
+    EXPECT(
+        (sacred::fullscreen_window_origin({-1920, -200, 1920, 1080}, 1920, 1080) == std::pair<int, int>{-1920, -200}));
+    EXPECT((sacred::fullscreen_window_origin({0, 0, 1512, 982}, 1600, 1000) == std::pair<int, int>{0, 0}));
     // Settings.cfg switches: any value but 0 turns one on, the last line wins, unknown keys are ignored.
     using sacred::parse_option_settings;
     EXPECT(parse_option_settings("SOUND : 1\r\n").empty());

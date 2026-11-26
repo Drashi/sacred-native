@@ -6,7 +6,9 @@
 #      SACRED_MACOS_DEPS (default build/macos-deps/prefix),
 #      RECIPE (a recipe other than the committed data/recipe.json.gz; local trials only, with BUNDLE_ALLOW_DIRTY=1),
 #      BUNDLE_ZIG=0 (leave the fallback compiler out: the player then needs Xcode's command line tools),
-#      SACRED_VERSION (the app's version; default: the latest tag v*).
+#      SACRED_VERSION (the app's version; default: the latest tag v*),
+#      BUNDLE_REQUIRE_ICON_COMPOSER=1 (fail instead of falling back to the round icon when actool cannot compile the
+#      Icon Composer icon; the default under CI, where CI=true).
 #
 # The same scheme as the Linux bundle (make_bundle.sh): no code and no data of the game. The runtime (sacred-native,
 # built with SACRED_GAME_MODULE), the launcher window (sacred-launcher), the translator with its recipe and headers
@@ -320,6 +322,11 @@ then
     cp "$build/AppIcon-car/Assets.car" "$build/AppIcon-car/AppIcon.icns" "$out/"
     icon_name=AppIcon
 else
+    if [ "${BUNDLE_REQUIRE_ICON_COMPOSER:-$([ "${CI:-}" = true ] && echo 1)}" = 1 ]; then
+        echo "ERROR: actool cannot compile the Icon Composer icon (Xcode 26 or newer needed):" >&2
+        cat "$build/actool.log" >&2
+        exit 1
+    fi
     echo "WARNING: actool cannot compile an Icon Composer icon (Xcode 26 or newer needed, see $build/actool.log):" \
          "the app gets the round icon, which macOS 26 shows on a grey square" >&2
     for size in 16 32 128 256 512; do

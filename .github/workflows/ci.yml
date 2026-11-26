@@ -55,7 +55,9 @@ jobs:
           path: dist/sacred-native-linux-arm64.tar.gz
 
   macos:
-    runs-on: macos-15
+    # macOS 26 with Xcode 26: its actool compiles the app's Icon Composer icon (make_bundle_macos.sh). The binaries
+    # still target macOS 15 (MACOSX_DEPLOYMENT_TARGET in the scripts).
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,7 +72,9 @@ jobs:
           cmake --build build/ci --parallel "$(sysctl -n hw.ncpu)"
           ctest --test-dir build/ci --output-on-failure
       - name: Bundle (with its file and path checks)
-        run: bash tools/dist/make_bundle.sh
+        run: |
+          xcodebuild -version
+          bash tools/dist/make_bundle.sh
       - uses: actions/upload-artifact@v7
         with:
           name: sacred-native-macos-arm64

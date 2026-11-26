@@ -119,7 +119,8 @@ and may start with `~/`, and a relative one is read from the working directory, 
   reach across the whole window; where the picture paints the water under its holes as the game shows it, that
   painting continues the water at the sides); without one only the original middle is shown. The bundle's pictures
   were made for this project from the game's screens; to use your own, put them in another directory and name it
-  here. The log lists what was found (`MENU_BACKGROUNDS ...`), and says so when
+  here; a directory named here that no longer exists falls back to the bundle's pictures. The log lists what was
+  found (`MENU_BACKGROUNDS ...`), and says so when
   the directory cannot be opened, holds no usable picture or links to pictures that are not there (a link with a
   relative target breaks when it is copied elsewhere: copy the pictures themselves), or when HD mode is off.
 * `FPS_LIMIT : 120` / `SACRED_FPS_LIMIT=120` (30..240, or `auto` for the display's refresh rate): the frame rate cap,

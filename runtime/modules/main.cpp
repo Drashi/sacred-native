@@ -517,7 +517,13 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
             }
 #endif
             if (hd.menu_backgrounds.empty() || !std::filesystem::is_directory(hd.menu_backgrounds, error)) {
-                const std::filesystem::path bundled = here / "menu-backgrounds";
+                // Next to the executable in the bundle directory and a build tree; in Contents/Resources in the macOS
+                // app, whose executables are in Contents/MacOS.
+                std::filesystem::path bundled = here / "menu-backgrounds";
+                if (!here.empty() && !std::filesystem::is_directory(bundled, error) && here.filename() == "MacOS") {
+                    bundled = here.parent_path() / "Resources" / "menu-backgrounds";
+                }
+
                 if (!here.empty() && std::filesystem::is_directory(bundled, error)) {
                     if (!hd.menu_backgrounds.empty()) {
                         event("MENU_BACKGROUNDS " + hd.menu_backgrounds + " does not exist; using " + bundled.string());

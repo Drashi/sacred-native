@@ -40,7 +40,8 @@ locations (`~/Games`, `~/Applications`, `/Applications`, CrossOver bottles' `dri
 * Fullscreen: `--fullscreen` (remembered until `--windowed`), or Alt/Option+Enter in the game window. `FULLSCREEN : 1`
   in `Settings.cfg` is converted to `--fullscreen`: the engine has no exclusive DirectDraw fullscreen, so the game runs
   windowed in a window that covers the display. Without `HD_WIDTH`/`HD_HEIGHT` a fullscreen start sets the game
-  screen to the display's size (`SACRED_HD_AUTO=0` keeps 1024x768).
+  screen to the display's size (`SACRED_HD_AUTO=0` keeps 1024x768); on a MacBook with a camera notch that is the
+  area below the menu bar strip, which is all a fullscreen window covers there (1512x949 on a 1512x982 display).
 * `AUTO_PICKUP : 1` / `SACRED_AUTO_PICKUP=1` (off by default): the hero picks up the loot lying next to it while
   standing or walking, without a click. What it takes follows the game's own pick-up setting in the in-game
   Options (gold, gold and uniques, or everything). Items you drop stay where they are; an item that does not fit
@@ -118,7 +119,8 @@ and may start with `~/`, and a relative one is read from the working directory, 
   reach across the whole window; where the picture paints the water under its holes as the game shows it, that
   painting continues the water at the sides); without one only the original middle is shown. The bundle's pictures
   were made for this project from the game's screens; to use your own, put them in another directory and name it
-  here. The log lists what was found (`MENU_BACKGROUNDS ...`), and says so when
+  here; a directory named here that no longer exists falls back to the bundle's pictures. The log lists what was
+  found (`MENU_BACKGROUNDS ...`), and says so when
   the directory cannot be opened, holds no usable picture or links to pictures that are not there (a link with a
   relative target breaks when it is copied elsewhere: copy the pictures themselves), or when HD mode is off.
 * `FPS_LIMIT : 120` / `SACRED_FPS_LIMIT=120` (30..240, or `auto` for the display's refresh rate): the frame rate cap,

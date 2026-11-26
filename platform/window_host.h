@@ -85,6 +85,9 @@ public:
     // The guest desktop: the chosen host display, but at least the size set with minimum_display_size(). Guest
     // screen coordinates start at that display's top-left corner.
     std::pair<int, int> display_size();
+    // The size a fullscreen window gets on the chosen display: its bounds less the area a camera notch hides (macOS),
+    // the whole display elsewhere. The automatic fullscreen game screen takes this size, so it fills the window 1:1.
+    std::pair<int, int> fullscreen_size();
     // The display to run on, 1-based (0: automatic, the display under the pointer); SACRED_DISPLAY wins. Only a call
     // before the display is first used counts: the choice is made once and kept for the whole run.
     void prefer_display(int number) { preferred_display_ = number; }

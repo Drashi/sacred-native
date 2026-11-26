@@ -382,10 +382,11 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
             host->prefer_display(sacred::read_display_setting(profile + "/Settings.cfg"));
         }
 
-        // Starting fullscreen without HD_WIDTH/HD_HEIGHT: the game screen takes the display's size, so the frame fills
-        // it 1:1 instead of a letterboxed, scaled 1024x768. SACRED_HD_AUTO=0 keeps the original size.
+        // Starting fullscreen without HD_WIDTH/HD_HEIGHT: the game screen takes the size of the fullscreen window (the
+        // display less a camera notch), so the frame fills it 1:1 instead of a letterboxed, scaled 1024x768.
+        // SACRED_HD_AUTO=0 keeps the original size.
         if (!resolution.enabled && host && env_flag("SACRED_FULLSCREEN") && !env_off("SACRED_HD_AUTO")) {
-            const auto display = host->display_size();
+            const auto display = host->fullscreen_size();
             resolution = sacred::display_resolution(display.first, display.second);
             if (resolution.enabled) {
                 event("HD_MODE_AUTO display=" + std::to_string(display.first) + "x" + std::to_string(display.second));
@@ -516,7 +517,13 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
             }
 #endif
             if (hd.menu_backgrounds.empty() || !std::filesystem::is_directory(hd.menu_backgrounds, error)) {
-                const std::filesystem::path bundled = here / "menu-backgrounds";
+                // Next to the executable in the bundle directory and a build tree; in Contents/Resources in the macOS
+                // app, whose executables are in Contents/MacOS.
+                std::filesystem::path bundled = here / "menu-backgrounds";
+                if (!here.empty() && !std::filesystem::is_directory(bundled, error) && here.filename() == "MacOS") {
+                    bundled = here.parent_path() / "Resources" / "menu-backgrounds";
+                }
+
                 if (!here.empty() && std::filesystem::is_directory(bundled, error)) {
                     if (!hd.menu_backgrounds.empty()) {
                         event("MENU_BACKGROUNDS " + hd.menu_backgrounds + " does not exist; using " + bundled.string());

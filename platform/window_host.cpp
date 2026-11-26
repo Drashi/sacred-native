@@ -2,6 +2,7 @@
 #include "window_host.h"
 #include "letterbox.h"
 #include "display_choice.h"
+#include "display_safe_area.h"
 #include "../runtime/process/memory.h"
 #include <SDL.h>
 #include <algorithm>
@@ -345,6 +346,24 @@ std::pair<int, int> WindowHost::display_size() {
     // A configured game screen larger than the host display still fits the guest desktop; presentation scales it.
     size.first = std::max(size.first, minimum_display_.first.load());
     size.second = std::max(size.second, minimum_display_.second.load());
+    return size;
+}
+
+std::pair<int, int> WindowHost::fullscreen_size() {
+    std::pair<int, int> size;
+    submit([&] {
+        select_display();
+        SDL_Rect bounds{};
+        if (SDL_GetDisplayBounds(display_, &bounds)) {
+            throw GuestFault("cannot query SDL display bounds");
+        }
+
+        const DisplayInsets insets = display_safe_insets(bounds.x, bounds.y, bounds.w, bounds.h);
+        size = {std::max(1, bounds.w - insets.left - insets.right), std::max(1, bounds.h - insets.top - insets.bottom)};
+        std::fprintf(stderr, "SACRED_DISPLAY_FULLSCREEN number=%d bounds=%dx%d insets=%d,%d,%d,%d size=%dx%d\n",
+                     display_ + 1, bounds.w, bounds.h, insets.top, insets.left, insets.bottom, insets.right, size.first,
+                     size.second);
+    });
     return size;
 }
 

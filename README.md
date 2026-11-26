@@ -36,9 +36,12 @@ trademark or the game's original developers and publishers. "Sacred" is their tr
 
 ## You need your own copy of the game
 
-Sacred Native contains **no game code and no game data**. It needs an installed **Sacred Gold 2.28** (English, the GOG or
-Steam release): the folder that holds `Sacred.exe`, `granny.dll` and `tincat2.dll`. On macOS or Linux you can copy that
-folder from a Windows installation. The installation is only read, never changed.
+Sacred Native contains **no game code and no game data**. It needs an installed **Sacred Gold 2.28** (English, the
+DRM-free GOG release; the Steam release has DRM): the folder that holds `Sacred.exe`, `granny.dll` and `tincat2.dll`.
+On macOS or Linux you can copy that folder from a Windows installation. The installation is only read, never changed.
+
+The Steam release is the same version, but its `Sacred.exe` is protected by Steam's DRM, which keeps the game code
+encrypted, so Sacred Native cannot translate it.
 
 On the first start the launcher translates the game's own `Sacred.exe`, `granny.dll` and `tincat2.dll` into native code
 on your machine (a few minutes, once per update). What ships is the runtime that replaces Windows, DirectDraw/Direct3D,

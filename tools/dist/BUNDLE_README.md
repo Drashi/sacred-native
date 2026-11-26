@@ -18,8 +18,9 @@ the folder. The launcher's and the game's windows belong to that entry (window c
 `sacred-native`), so the dock or task bar shows them under its icon.
 
 The launcher window finds your installation (or lets you choose its folder), checks that it is Sacred Gold 2.28
-(English, GOG or Steam) and starts the game with **Play**. Its **Settings** page holds this port's options (display
-mode, screen size, frame rate limit, the original Sacred look, render scale, HD textures), each with a line on what
+(English, the DRM-free GOG release; the Steam release has DRM) and starts the game with **Play**. Its
+**Settings** page holds this port's options (display mode, screen size, frame rate limit, the original Sacred look,
+render scale, HD textures), each with a line on what
 it does; a change is written into the profile's `Settings.cfg` at once. A new profile starts fullscreen at the
 display's size, at the display's refresh rate, with render scale 2x and HD textures 2x.
 

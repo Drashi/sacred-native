@@ -34,7 +34,7 @@ body:
     id: game
     attributes:
       label: Sacred Gold installation
-      description: Where it comes from (GOG, CD, Steam) and its language. Sacred Native needs the English 2.28.
+      description: Where it comes from (GOG, CD, Steam) and its language. Sacred Native needs the English 2.28 from GOG, the DRM-free release (the Steam release has DRM).
     validations:
       required: true
   - type: textarea

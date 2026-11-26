@@ -179,8 +179,16 @@ if [ -d "$res/source" ] && [ "$given_module" = 0 ]; then
     extra+=(--game-module "$module_file")
 fi
 
+runtime_assets="$game"
+if [ -f "$res/source/tools/launcher/steam_install.py" ]; then
+    staged="$(mktemp -d "$profile/.sacred-assets.XXXXXX")" || exit 1
+    trap 'rm -R -- "$staged"' EXIT
+    runtime_assets="$("$res/python/bin/python3" -I -B "$res/source/tools/launcher/steam_install.py" "$game" "$staged")" ||
+        exit 1
+fi
+
 # ${extra[@]+...}: bash 3.2 (macOS /bin/bash) treats an empty array as unset under set -u.
-"$bin/sacred-native" --assets "$game" --profile "$profile" ${extra[@]+"${extra[@]}"} > "$log" 2>&1
+"$bin/sacred-native" --assets "$runtime_assets" --profile "$profile" ${extra[@]+"${extra[@]}"} > "$log" 2>&1
 rc=$?
 if [ $rc -ne 0 ]; then
     echo "sacred-gold: sacred-native exited with status $rc; see $log" >&2

@@ -29,11 +29,14 @@ import platform
 import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/lift"))
 import recipe as RECIPE  # noqa: E402
+sys.path.insert(0, str(ROOT / "tools/launcher"))
+from steam_install import stage  # noqa: E402
 
 # The compile contract of the CMake game module (CMakeLists.txt, SACRED_GAME_MODULE): keep the two in step.
 DEFINES = ["-DRECOMP_MMU_GUEST=1", "-DRECOMP_NO_STORE_HOOKS=1", "-DSACRED_DRIVER_CHECKPOINTS=1"]
@@ -130,6 +133,7 @@ def main() -> int:
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     module = out / module_name()
+    staged = None
     try:
         candidates = args.cc or [os.environ.get("CC") or "cc"]
         cc = next((shlex.split(c) for c in candidates if usable(shlex.split(c), out)), None)
@@ -138,8 +142,10 @@ def main() -> int:
 
         say("COMPILER", shlex.join(cc))
         say("STEP verify Checking the game files")
+        staged = tempfile.TemporaryDirectory(prefix="sacred-assets-", dir=out)
+        assets = stage(args.assets, Path(staged.name))
         for name, (filename, listing) in RECIPE.load(args.recipe).items():
-            source = args.assets / filename
+            source = assets / filename
             if not source.is_file():
                 raise RuntimeError(f"{filename} is missing in {args.assets}")
 
@@ -154,7 +160,7 @@ def main() -> int:
 
         say("STEP generate Translating the game code")
         generated = out / "generated"
-        env = dict(os.environ, SACRED_ASSETS=str(args.assets), SACRED_RECIPE=str(args.recipe.resolve()),
+        env = dict(os.environ, SACRED_ASSETS=str(assets), SACRED_RECIPE=str(args.recipe.resolve()),
                    SACRED_GENERATED_DIR=str(generated))
         # -B passes on (the launchers run this with it): no __pycache__ inside the bundle or the macOS app.
         no_bytecode = ["-B"] if sys.dont_write_bytecode else []
@@ -214,6 +220,9 @@ def main() -> int:
             say("ERROR", line)
 
         return 1
+    finally:
+        if staged is not None:
+            staged.cleanup()
 
 
 if __name__ == "__main__":

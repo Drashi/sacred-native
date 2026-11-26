@@ -33,6 +33,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -197,7 +198,9 @@ std::string check_installation(const std::string& game) {
         for (int i = 0; i < 32; ++i) {
             std::snprintf(hex + 2 * i, 3, "%02x", digest[i]);
         }
-        if (spec.sha256 != hex) {
+        const bool steam = name == "Sacred.exe" &&
+            std::string_view(hex) == "4df6659352282a0e57bdf69d2ac33396200fd0b54670d327cb9822ffdc4891cd";
+        if (spec.sha256 != hex && !steam) {
             return name + " is not the supported version (Sacred Gold 2.28, English GOG/Steam).";
         }
     }

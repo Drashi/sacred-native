@@ -117,7 +117,7 @@ done
 src="$out/source"
 bundle_stage "$src" tools/lift/generate.py tools/lift/recipe.py tools/lift/resolution.py \
       tools/lift/resolution_sites.json \
-      tools/lift/x87_fast.py tools/lift/promote.py tools/launcher/build_game.py \
+      tools/lift/x87_fast.py tools/lift/promote.py tools/launcher/build_game.py tools/launcher/steam_install.py \
       third_party/recomp-kit/tools/game_config.py ':(glob)third_party/recomp-kit/tools/recomp/*.py' \
       ':(glob)third_party/recomp-kit/runtime/*.h' ':(glob)runtime/cpu/*.h' runtime/modules/game_module.h \
       runtime/modules/resolution_table.h runtime/sacred/native.c runtime/granny/native.c data/entry-targets.json \

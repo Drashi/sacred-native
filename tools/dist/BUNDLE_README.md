@@ -114,8 +114,10 @@ and may start with `~/`, and a relative one is read from the working directory, 
   the sides stay black. One PNG per screen, named `options-sacred.png`, `options-underworld.png`, `saveload.png`
   (the save and load window, the same in both looks), `charselect-sacred.png`, `charselect-underworld.png`,
   `main-sacred.png`, `main-underworld.png` (the `-sacred` ones with `LEGACY_UI : 1`), `loading-<bitmap>.png` for
-  `PAK/<bitmap>.bmp` (e.g. `loading-loadinguw00.png`) and `worldmap.png`: any height (768 or a multiple), wider than
-  4:3, with the original screen unchanged in the middle; or as a pair `<screen>.sides.png` + `<screen>.mask.png`
+  `PAK/<bitmap>.bmp` (e.g. `loading-loadinguw00.png`), `worldmap.png` and `network.png` (the multiplayer lobby and
+  account windows; when the directory holds split pictures, one is made from their stone background, mirrored):
+  any height (768 or a multiple), wider than 4:3, with the original screen unchanged in the middle; or as a pair
+  `<screen>.sides.png` + `<screen>.mask.png`
   holding only the pixels that differ from the game's screen, which the engine fills in from your `texture.pak`
   (`tools/menu/split_backgrounds.py`; the bundle's `menu-backgrounds/` holds such pairs for every screen but the
   world map, and the launcher uses them whenever the screen size is not the original)

@@ -23,6 +23,9 @@ namespace sacred {
 //                                                       game menu; the same background with either LEGACY_UI)
 //   loading-<bitmap>.png                                loading screen PAK/<bitmap>.bmp, e.g. loading-loadinguw00.png
 //   worldmap.png                                        world map (drawn around the screen only)
+//   network.png                                         the network windows (lobby, account; drawn around the screen
+//                                                       only); without one, made from their stone mirrored out to
+//                                                       the sides when the directory has split pictures
 //
 // Still screens (options, save game window, loading, world map): while the window is wider than 4:3, the screen's own
 // background (its 4x3 grid of 256x256 tiles, recognised by the content of the texture.pak entries they come from,
@@ -67,6 +70,9 @@ struct BackdropScreen {
     const char* sky = nullptr;
 };
 const std::vector<BackdropScreen>& backdrop_screens();
+// The network windows' picture from their 1024x768 stone screen (RGBA): the screen in the middle of
+// 1024 + 2 * menu_extension_max columns, mirrored at its edges out to the sides, opaque.
+Backdrop network_picture(const std::vector<uint8_t>& screen);
 // FNV-1a 64 of the raw pixel data of every 32-bit (format 6) entry of TEX\x03 pak files, by upper-case entry name,
 // later files winning: the content hash the guest's texture of that entry gets (texture_hash, A8R8G8B8).
 std::map<std::string, uint64_t> texture_pak_hashes(const std::vector<std::filesystem::path>& paks);

@@ -3,6 +3,7 @@
 #include <set>
 #include "texture_pak.h"
 #include "../../platform/digest.h"
+#include "../../platform/letterbox.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -414,6 +415,29 @@ std::vector<uint8_t> wide_water_texture(const std::vector<uint8_t>& source, uint
     return rgba;
 }
 
+Backdrop network_picture(const std::vector<uint8_t>& screen) {
+    Backdrop picture;
+    picture.key = "network";
+    const uint32_t side = menu_extension_max;
+    picture.width = 1024 + 2 * side;
+    picture.height = 768;
+    picture.rgba.resize(size_t(picture.width) * picture.height * 4);
+    for (uint32_t y = 0; y < 768; ++y) {
+        for (uint32_t x = 0; x < picture.width; ++x) {
+            // Picture column x is screen column x - side, reflected at the screen's edges.
+            const int32_t at = int32_t(x) - int32_t(side);
+            const uint32_t from = at < 0 ? uint32_t(-1 - at) : at >= 1024 ? uint32_t(2047 - at) : uint32_t(at);
+            std::copy_n(&screen[(size_t(y) * 1024 + from) * 4], 4, &picture.rgba[(size_t(y) * picture.width + x) * 4]);
+        }
+    }
+
+    for (size_t at = 3; at < picture.rgba.size(); at += 4) {
+        picture.rgba[at] = 255;
+    }
+
+    return picture;
+}
+
 const std::vector<BackdropScreen>& backdrop_screens() {
     static const std::vector<BackdropScreen> screens = [] {
         std::vector<BackdropScreen> list;
@@ -438,6 +462,18 @@ const std::vector<BackdropScreen>& backdrop_screens() {
         // The save game window (load from the main menu, save and load from the game menu) has one background in
         // both looks: the table at 0x9e4754 (FUN_0071efe0) that LEGACY_UI leaves alone.
         list.push_back({"saveload", numbered("UW_OPTION_%02d.TGA", 1)});
+        // The stone behind the network windows (local network and internet lobby, account, password): the menu
+        // manager's own tiles (FUN_0070be20), row and column in the name like the classic options screen. They are
+        // 16-bit in texture.pak, so not recognised by content: the window draw raises a screen flag instead
+        // (resolution_sites.json, 0x007277f8), and the picture is made from them at start (network_picture).
+        std::vector<std::string> network;
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 4; ++column) {
+                network.push_back("GUI_OPTION_BACKGROUND" + std::to_string(row) + std::to_string(column) + ".TGA");
+            }
+        }
+
+        list.push_back({"network", network});
         return list;
     }();
     return screens;
@@ -742,10 +778,27 @@ MenuBackdrops::MenuBackdrops(const std::string& directory, const std::vector<std
         notes.push_back("no usable picture in " + shown + " (one PNG per screen, e.g. main-sacred.png)");
     }
 
+    // The network windows' picture, unless the directory has one: their stone screen in the middle of the widest
+    // canvas, mirrored out to the sides (the stone has no direction, and a mirror has no seam). Made when the split
+    // pictures have read the paks' tiles already (decoding texture.pak for it alone would slow every start down).
+    if (find("network") < 0 && !tile_pixels.empty()) {
+        std::vector<uint8_t> screen;
+        std::string why;
+        if (screen_of("network", screen, why)) {
+            backdrops_.push_back(network_picture(screen));
+        } else {
+            notes.push_back("network: " + why);
+        }
+    }
+
     std::map<std::string, uint64_t> prefix_of;
     const auto hashes = texture_pak_hashes(paks, &prefix_of);
     for (const BackdropScreen& screen : backdrop_screens()) {
         const int index = find(screen.key);
+        if (screen.key == std::string("network")) {
+            continue; // shown by its screen flag, see backdrop_screens
+        }
+
         // The water and sky of the menu canvas screens are needed with or without a picture.
         auto role = [&](const char* name, BackdropTile::Role kind) {
             if (!name) {

@@ -197,8 +197,14 @@ std::string check_installation(const std::string& game) {
         for (int i = 0; i < 32; ++i) {
             std::snprintf(hex + 2 * i, 3, "%02x", digest[i]);
         }
+        // The Steam release's Sacred.exe: the same build, wrapped in Steam's DRM, which leaves its code encrypted.
+        if (name == "Sacred.exe" &&
+            std::string(hex) == "4df6659352282a0e57bdf69d2ac33396200fd0b54670d327cb9822ffdc4891cd") {
+            return "This is the Steam release: its Sacred.exe is protected by Steam's DRM, which Sacred Native cannot "
+                   "translate. Sacred Native needs the DRM-free GOG release (Sacred Gold 2.28, English).";
+        }
         if (spec.sha256 != hex) {
-            return name + " is not the supported version (Sacred Gold 2.28, English GOG/Steam).";
+            return name + " is not the supported version (Sacred Gold 2.28, English, GOG release).";
         }
     }
     return "";

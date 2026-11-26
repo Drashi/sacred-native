@@ -302,6 +302,14 @@ add_library(sacred_window STATIC platform/window_host.cpp platform/renderer_gl.c
     platform/fvf.cpp platform/app_icon.cpp)
 target_include_directories(sacred_window PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(sacred_window PUBLIC PkgConfig::SDL2 OpenGL::GL PRIVATE PkgConfig::FONTS)
+# The fullscreen area of a display: AppKit on macOS (the notch), the whole display elsewhere.
+if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(sacred_window PRIVATE platform/display_safe_area_mac.mm)
+    target_link_libraries(sacred_window PUBLIC "-framework AppKit")
+else()
+    target_sources(sacred_window PRIVATE platform/display_safe_area.cpp)
+endif()
 target_compile_options(sacred_window PRIVATE -Wall -Wextra -Werror ${SACRED_RUNTIME_OPT} -g1)
 # Our XML reader and writer (platform/xml_native.cpp) against bytes and trees libxml2 produced.
 add_executable(xml_native_tests tests/xml/xml_native_tests.cpp platform/xml_native.cpp)

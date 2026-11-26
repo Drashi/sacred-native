@@ -40,7 +40,8 @@ locations (`~/Games`, `~/Applications`, `/Applications`, CrossOver bottles' `dri
 * Fullscreen: `--fullscreen` (remembered until `--windowed`), or Alt/Option+Enter in the game window. `FULLSCREEN : 1`
   in `Settings.cfg` is converted to `--fullscreen`: the engine has no exclusive DirectDraw fullscreen, so the game runs
   windowed in a window that covers the display. Without `HD_WIDTH`/`HD_HEIGHT` a fullscreen start sets the game
-  screen to the display's size (`SACRED_HD_AUTO=0` keeps 1024x768).
+  screen to the display's size (`SACRED_HD_AUTO=0` keeps 1024x768); on a MacBook with a camera notch that is the
+  area below the menu bar strip, which is all a fullscreen window covers there (1512x949 on a 1512x982 display).
 * `AUTO_PICKUP : 1` / `SACRED_AUTO_PICKUP=1` (off by default): the hero picks up the loot lying next to it while
   standing or walking, without a click. What it takes follows the game's own pick-up setting in the in-game
   Options (gold, gold and uniques, or everything). Items you drop stay where they are; an item that does not fit

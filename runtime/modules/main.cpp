@@ -382,10 +382,11 @@ int run_guest(int argc, char** argv, sacred::WindowHost* host) {
             host->prefer_display(sacred::read_display_setting(profile + "/Settings.cfg"));
         }
 
-        // Starting fullscreen without HD_WIDTH/HD_HEIGHT: the game screen takes the display's size, so the frame fills
-        // it 1:1 instead of a letterboxed, scaled 1024x768. SACRED_HD_AUTO=0 keeps the original size.
+        // Starting fullscreen without HD_WIDTH/HD_HEIGHT: the game screen takes the size of the fullscreen window (the
+        // display less a camera notch), so the frame fills it 1:1 instead of a letterboxed, scaled 1024x768.
+        // SACRED_HD_AUTO=0 keeps the original size.
         if (!resolution.enabled && host && env_flag("SACRED_FULLSCREEN") && !env_off("SACRED_HD_AUTO")) {
-            const auto display = host->display_size();
+            const auto display = host->fullscreen_size();
             resolution = sacred::display_resolution(display.first, display.second);
             if (resolution.enabled) {
                 event("HD_MODE_AUTO display=" + std::to_string(display.first) + "x" + std::to_string(display.second));

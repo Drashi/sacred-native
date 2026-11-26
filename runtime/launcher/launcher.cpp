@@ -20,6 +20,8 @@
 #include <SDL.h>
 #include <algorithm>
 #include <atomic>
+#include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -358,26 +360,170 @@ std::u16string utf16(const std::string& text) {
     return out;
 }
 
+// The window's layout is in logical pixels (W x H); on a HiDPI display the renderer has more pixels than that, and
+// text, shapes and the logo are drawn at the renderer's own resolution so that they stay sharp.
 constexpr int W = 800, H = 600;
-enum class Style { body, small, heading, title };
+constexpr int side = 232; // the sidebar: logo, pages, Play
+enum class Style { body, small, heading, title, page, button, play };
+// The colours of Sacred's own menus: the slate of the Underworld menu's stone, the gold of the menu texts.
 struct Palette {
-    SDL_Color ink{235, 220, 190, 255}, dim{170, 150, 120, 255}, gold{240, 200, 120, 255}, good{140, 200, 120, 255},
-        bad{235, 120, 100, 255}, warn{235, 180, 90, 255}, line{110, 90, 60, 255};
+    SDL_Color ink{228, 231, 224, 255}, dim{152, 163, 160, 255}, faint{102, 113, 112, 255}, gold{238, 198, 86, 255},
+        bright{252, 226, 144, 255}, good{146, 208, 124, 255}, bad{236, 126, 104, 255}, warn{234, 184, 98, 255},
+        line{52, 64, 66, 255}, stone{112, 128, 128, 255}, // a hovered or neutral edge
+        bg_top{23, 31, 33, 255}, bg_bottom{7, 10, 11, 255}, glow{40, 72, 74, 255}, side_shade{0, 0, 0, 100},
+        side_edge{84, 100, 100, 150}, panel_top{29, 37, 39, 232}, panel_bottom{20, 26, 28, 232},
+        panel_edge{66, 80, 82, 255}, field_top{9, 12, 13, 255}, field_bottom{15, 19, 20, 255},
+        field_edge{62, 75, 77, 255}, button_top{50, 61, 63, 255}, button_bottom{35, 43, 45, 255},
+        button_hover_top{64, 77, 79, 255}, button_hover_bottom{45, 55, 57, 255}, button_edge{94, 109, 110, 255},
+        off_top{40, 45, 46, 255}, off_bottom{32, 36, 37, 255}, off_edge{58, 65, 66, 255}, off_ink{108, 116, 116, 255},
+        gold_top{240, 200, 90, 255}, gold_bottom{168, 118, 28, 255}, gold_hover_top{250, 216, 112, 255},
+        gold_hover_bottom{190, 136, 38, 255}, gold_edge{255, 228, 150, 255}, gold_ink{34, 24, 6, 255},
+        tab_top{46, 57, 59, 255}, tab_bottom{35, 43, 45, 255}, tab_edge{82, 97, 99, 255}, hover_top{34, 42, 44, 200},
+        hover_bottom{28, 35, 37, 200}, hover_edge{60, 72, 74, 200}, select_top{26, 33, 35, 255},
+        select_bottom{19, 24, 26, 255}, select_hover_top{39, 48, 50, 255}, select_hover_bottom{30, 37, 39, 255},
+        select_edge{72, 86, 88, 255}, chip_top{41, 51, 53, 255}, chip_bottom{32, 40, 42, 255},
+        chip_edge{80, 94, 96, 255}, track{30, 38, 40, 255};
 } const colors;
+
+SDL_Color mix(SDL_Color a, SDL_Color b, float t) {
+    auto channel = [t](Uint8 x, Uint8 y) {
+        return Uint8(std::lround(float(x) + (float(y) - float(x)) * t));
+    };
+    return {channel(a.r, b.r), channel(a.g, b.g), channel(a.b, b.b), channel(a.a, b.a)};
+}
+
+// Shapes as signed distances (logical pixels, negative inside), drawn with one pixel of antialiasing.
+float box_distance(float x, float y, float cx, float cy, float hw, float hh, float r) {
+    const float qx = std::fabs(x - cx) - (hw - r), qy = std::fabs(y - cy) - (hh - r);
+    const float ox = std::max(qx, 0.0f), oy = std::max(qy, 0.0f);
+    return std::sqrt(ox * ox + oy * oy) + std::min(std::max(qx, qy), 0.0f) - r;
+}
+float segment_distance(float x, float y, float ax, float ay, float bx, float by, float r) {
+    const float px = x - ax, py = y - ay, dx = bx - ax, dy = by - ay;
+    const float t = std::clamp((px * dx + py * dy) / (dx * dx + dy * dy), 0.0f, 1.0f);
+    return std::hypot(px - dx * t, py - dy * t) - r;
+}
+float triangle_distance(float x, float y, float ax, float ay, float bx, float by, float cx, float cy) {
+    const float e[3][2] = {{bx - ax, by - ay}, {cx - bx, cy - by}, {ax - cx, ay - cy}};
+    const float v[3][2] = {{x - ax, y - ay}, {x - bx, y - by}, {x - cx, y - cy}};
+    const float sign = e[0][0] * e[2][1] - e[0][1] * e[2][0] > 0 ? 1.0f : -1.0f;
+    float best = 1e9f, inside = 1e9f;
+    for (int i = 0; i < 3; ++i) {
+        const float t =
+            std::clamp((v[i][0] * e[i][0] + v[i][1] * e[i][1]) / (e[i][0] * e[i][0] + e[i][1] * e[i][1]), 0.0f, 1.0f);
+        const float qx = v[i][0] - e[i][0] * t, qy = v[i][1] - e[i][1] * t;
+        best = std::min(best, qx * qx + qy * qy);
+        inside = std::min(inside, sign * (v[i][0] * e[i][1] - v[i][1] * e[i][0]));
+    }
+    return inside > 0 ? -std::sqrt(best) : std::sqrt(best);
+}
+float coverage(float distance, float pixel) {
+    return std::clamp(0.5f - distance / pixel, 0.0f, 1.0f);
+}
+
+// The small line icons, in a box of `s` logical pixels.
+enum class Icon { check, cross, folder, gear, play, monitor, eye, picture, shield, left, right, reset, info, game };
+float icon_distance(Icon icon, float x, float y, float s) {
+    const float u = x / s, v = y / s;
+    auto seg = [&](float ax, float ay, float bx, float by, float r) {
+        return segment_distance(u, v, ax, ay, bx, by, r);
+    };
+    const float len = std::hypot(u - 0.5f, v - 0.5f);
+    float d = 1e9f;
+    switch (icon) {
+    case Icon::check:
+        d = std::min(seg(0.22f, 0.53f, 0.42f, 0.72f, 0.08f), seg(0.42f, 0.72f, 0.78f, 0.30f, 0.08f));
+        break;
+    case Icon::cross:
+        d = std::min(seg(0.3f, 0.3f, 0.7f, 0.7f, 0.08f), seg(0.7f, 0.3f, 0.3f, 0.7f, 0.08f));
+        break;
+    case Icon::folder:
+        d = std::min(box_distance(u, v, 0.5f, 0.57f, 0.42f, 0.27f, 0.07f),
+                     box_distance(u, v, 0.30f, 0.30f, 0.22f, 0.10f, 0.06f));
+        break;
+    case Icon::gear: {
+        float teeth = 1e9f;
+        for (int k = 0; k < 8; ++k) {
+            const float a = float(k) * 0.785398f;
+            teeth = std::min(teeth, seg(0.5f + 0.30f * std::cos(a), 0.5f + 0.30f * std::sin(a),
+                                        0.5f + 0.40f * std::cos(a), 0.5f + 0.40f * std::sin(a), 0.075f));
+        }
+        d = std::max(std::min(len - 0.31f, teeth), -(len - 0.13f));
+        break;
+    }
+    case Icon::play:
+        d = triangle_distance(u, v, 0.30f, 0.18f, 0.30f, 0.82f, 0.84f, 0.50f) - 0.03f;
+        break;
+    case Icon::monitor:
+        d = std::min({std::fabs(box_distance(u, v, 0.5f, 0.42f, 0.42f, 0.29f, 0.06f)) - 0.06f,
+                      seg(0.5f, 0.72f, 0.5f, 0.84f, 0.06f), seg(0.30f, 0.86f, 0.70f, 0.86f, 0.06f)});
+        break;
+    case Icon::eye: {
+        const float lens = std::max(std::hypot(u - 0.5f, v - 1.02f) - 0.66f, std::hypot(u - 0.5f, v + 0.02f) - 0.66f);
+        d = std::min(std::fabs(lens) - 0.055f, len - 0.13f);
+        break;
+    }
+    case Icon::picture:
+        d = std::min({std::fabs(box_distance(u, v, 0.5f, 0.5f, 0.42f, 0.34f, 0.07f)) - 0.06f,
+                      triangle_distance(u, v, 0.18f, 0.76f, 0.42f, 0.46f, 0.62f, 0.76f),
+                      triangle_distance(u, v, 0.48f, 0.76f, 0.64f, 0.56f, 0.82f, 0.76f),
+                      std::hypot(u - 0.66f, v - 0.34f) - 0.08f});
+        break;
+    case Icon::shield: {
+        const float body = std::min(box_distance(u, v, 0.5f, 0.34f, 0.34f, 0.20f, 0.05f),
+                                    triangle_distance(u, v, 0.16f, 0.46f, 0.84f, 0.46f, 0.5f, 0.92f));
+        d = std::min(std::fabs(body) - 0.055f, seg(0.5f, 0.26f, 0.5f, 0.66f, 0.055f));
+        break;
+    }
+    case Icon::left:
+        d = std::min(seg(0.62f, 0.22f, 0.36f, 0.5f, 0.08f), seg(0.36f, 0.5f, 0.62f, 0.78f, 0.08f));
+        break;
+    case Icon::right:
+        d = std::min(seg(0.38f, 0.22f, 0.64f, 0.5f, 0.08f), seg(0.64f, 0.5f, 0.38f, 0.78f, 0.08f));
+        break;
+    case Icon::reset: {
+        const float angle = std::atan2(v - 0.5f, u - 0.5f); // 0 to the right, negative upwards
+        const float arc = angle > -1.75f && angle < -0.55f ? 1e9f : std::fabs(len - 0.30f) - 0.07f;
+        d = std::min(arc, triangle_distance(u, v, 0.36f, 0.06f, 0.56f, 0.22f, 0.34f, 0.36f));
+        break;
+    }
+    case Icon::info:
+        d = std::min({std::fabs(len - 0.38f) - 0.06f, seg(0.5f, 0.46f, 0.5f, 0.70f, 0.065f),
+                      std::hypot(u - 0.5f, v - 0.30f) - 0.07f});
+        break;
+    case Icon::game:
+        d = std::min({std::fabs(box_distance(u, v, 0.5f, 0.55f, 0.44f, 0.24f, 0.2f)) - 0.06f,
+                      seg(0.25f, 0.55f, 0.39f, 0.55f, 0.05f), seg(0.32f, 0.48f, 0.32f, 0.62f, 0.05f),
+                      std::hypot(u - 0.64f, v - 0.50f) - 0.05f, std::hypot(u - 0.74f, v - 0.60f) - 0.05f});
+        break;
+    }
+    return d * s;
+}
 
 class Ui {
 public:
-    Ui(SDL_Renderer* renderer)
-        : renderer_(renderer), body_("Arial", -15, 400, false), small_("Arial", -13, 400, false),
-          heading_("Arial", -16, 700, false), title_("Times New Roman", -30, 700, false) {}
+    // `name_font`: the file of the game's Carolingia (the font of Sacred's menus) for the project's name, or "" for
+    // Arial.
+    Ui(SDL_Renderer* renderer, float scale, const std::string& name_font)
+        : renderer_(renderer), scale_(scale), body_("Arial", px(15), 400, false), small_("Arial", px(13), 400, false),
+          heading_("Arial", px(15), 700, false),
+          title_(name_font.empty() ? "Arial" : "Carolingia", px(name_font.empty() ? 24 : 29),
+                 name_font.empty() ? 700 : 400, false,
+                 name_font.empty() ? std::vector<std::string>{} : std::vector<std::string>{name_font}),
+          page_("Arial", px(22), 700, false), button_("Arial", px(15), 700, false), play_("Arial", px(20), 700, false) {
+    }
     ~Ui() {
         for (auto& entry : cache_) {
             SDL_DestroyTexture(entry.second.texture);
         }
+        for (auto& entry : shapes_) {
+            SDL_DestroyTexture(entry.second);
+        }
     }
     struct Text {
         SDL_Texture* texture;
-        int w, h;
+        int w, h;     // logical
+        float fw, fh; // logical, exact
     };
 
     // Mouse state of this frame, in logical coordinates; `clip` limits where clicks count (the scrolled list).
@@ -398,33 +544,44 @@ public:
             cache_.clear();
         }
         const sacred::Font& font = style == Style::title     ? title_
+                                   : style == Style::page    ? page_
                                    : style == Style::heading ? heading_
                                    : style == Style::small   ? small_
+                                   : style == Style::button  ? button_
+                                   : style == Style::play    ? play_
                                                              : body_;
         const sacred::TextRun run = font.render(utf16(value.empty() ? " " : value));
-        SDL_Texture* texture = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC,
-                                                 std::max(1, run.width), std::max(1, run.height));
-        std::vector<uint32_t> pixels(size_t(std::max(1, run.width)) * std::max(1, run.height), 0);
+        const int rw = std::max(1, run.width), rh = std::max(1, run.height);
+        SDL_Texture* texture = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, rw, rh);
+        std::vector<uint32_t> pixels(size_t(rw) * size_t(rh), 0);
         for (size_t i = 0; i < run.alpha.size(); ++i) {
             pixels[i] = uint32_t(run.alpha[i]) << 24 | 0xffffff;
         }
-        SDL_UpdateTexture(texture, nullptr, pixels.data(), std::max(1, run.width) * 4);
+        SDL_UpdateTexture(texture, nullptr, pixels.data(), rw * 4);
         SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-        return cache_[key] = Text{texture, run.width, run.height};
+        const float fw = float(rw) / scale_, fh = float(rh) / scale_;
+        return cache_[key] = Text{texture, int(std::ceil(fw)), int(std::ceil(fh)), fw, fh};
+    }
+    // Long texts lose their start ("...") to fit `max_width`; paths keep their informative end that way.
+    std::string fit(const std::string& value, Style style, int max_width) {
+        std::string shown = value;
+        while (max_width > 0 && shown.size() > 4 && text(shown, style).w > max_width) {
+            shown = "..." + shown.substr(4);
+        }
+        return shown;
     }
     int draw_text(const std::string& value, int x, int y, SDL_Color color, Style style = Style::body,
                   int max_width = 0) {
-        std::string shown = value;
-        if (max_width > 0) { // long paths: keep the end
-            while (shown.size() > 4 && text(shown, style).w > max_width) {
-                shown = "..." + shown.substr(4);
-            }
-        }
-        const Text& t = text(shown, style);
+        const Text& t = text(fit(value, style, max_width), style);
         SDL_SetTextureColorMod(t.texture, color.r, color.g, color.b);
-        SDL_Rect rect{x, y, t.w, t.h};
-        SDL_RenderCopy(renderer_, t.texture, nullptr, &rect);
+        SDL_SetTextureAlphaMod(t.texture, color.a);
+        const SDL_FRect rect{float(x), float(y), t.fw, t.fh};
+        SDL_RenderCopyF(renderer_, t.texture, nullptr, &rect);
         return t.h;
+    }
+    void draw_centered(const std::string& value, SDL_Rect rect, SDL_Color color, Style style) {
+        const Text& t = text(value, style);
+        draw_text(value, rect.x + (rect.w - t.w) / 2, rect.y + (rect.h - t.h) / 2, color, style);
     }
     // Words of `value` broken into lines no wider than `width`.
     std::vector<std::string> wrap(const std::string& value, int width, Style style) {
@@ -454,55 +611,280 @@ public:
     }
     void fill(SDL_Rect rect, SDL_Color color) {
         SDL_SetRenderDrawColor(renderer_, color.r, color.g, color.b, color.a);
+        SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
         SDL_RenderFillRect(renderer_, &rect);
     }
-    void frame(SDL_Rect rect, SDL_Color color) {
-        SDL_SetRenderDrawColor(renderer_, color.r, color.g, color.b, color.a);
-        SDL_RenderDrawRect(renderer_, &rect);
+
+    // A rounded rectangle with a vertical gradient and a border of `border_width` logical pixels.
+    void panel(SDL_Rect rect, int radius, SDL_Color top, SDL_Color bottom, SDL_Color border, float border_width = 1) {
+        char key[160];
+        std::snprintf(key, sizeof key, "panel %d %d %d %08x %08x %08x %.2f", rect.w, rect.h, radius, pack(top),
+                      pack(bottom), pack(border), double(border_width));
+        const float w = float(rect.w), h = float(rect.h), r = float(radius);
+        draw_shape(key, rect, [&](float x, float y, float pixel) {
+            const float d = box_distance(x, y, w / 2, h / 2, w / 2, h / 2, r);
+            const float outer = coverage(d, pixel),
+                        inner = border_width > 0 ? coverage(d + border_width, pixel) : outer;
+            return blend(mix(top, bottom, std::clamp(y / h, 0.0f, 1.0f)), inner, border, outer - inner);
+        });
     }
+    void icon(Icon which, int x, int y, int size, SDL_Color color) {
+        char key[64];
+        std::snprintf(key, sizeof key, "icon %d %d", int(which), size);
+        const float s = float(size);
+        SDL_Texture* texture = shape(key, size, size, [&](float px, float py, float pixel) {
+            return Rgba{1, 1, 1, coverage(icon_distance(which, px, py, s), pixel)};
+        });
+        SDL_SetTextureColorMod(texture, color.r, color.g, color.b);
+        SDL_SetTextureAlphaMod(texture, color.a);
+        const SDL_FRect rect{float(x), float(y), s, s};
+        SDL_RenderCopyF(renderer_, texture, nullptr, &rect);
+    }
+    // The full-window backdrop: a dark warm gradient with a faint glow behind the logo.
+    void backdrop() {
+        draw_shape("backdrop", {0, 0, W, H}, [](float x, float y, float) {
+            const float glow = std::max(0.0f, 1.0f - std::hypot(x - 116.0f, (y - 100.0f) * 1.2f) / 420.0f);
+            const float fall = std::max(0.0f, 1.0f - std::hypot(x - 520.0f, y - 40.0f) / 700.0f);
+            SDL_Color base = mix(colors.bg_top, colors.bg_bottom, y / float(H));
+            base = mix(base, colors.glow, 0.30f * glow * glow + 0.10f * fall * fall);
+            return Rgba{float(base.r) / 255, float(base.g) / 255, float(base.b) / 255, 1};
+        });
+    }
+    // A thin line fading out at both ends, with a small diamond in the middle when `diamond`.
+    void divider(int x, int y, int w, SDL_Color color, bool diamond) {
+        char key[64];
+        std::snprintf(key, sizeof key, "divider %d %d %08x", w, int(diamond), pack(color));
+        const float fw = float(w);
+        draw_shape(key, {x, y - 5, w, 11}, [&](float px, float py, float pixel) {
+            const float along = std::sin(3.14159f * std::clamp(px / fw, 0.0f, 1.0f));
+            float a = coverage(std::fabs(py - 5.5f) - 0.5f, pixel) * along;
+            if (diamond) {
+                a = std::max(a, coverage(std::fabs(px - fw / 2) + std::fabs(py - 5.5f) - 4.0f, pixel));
+            }
+            return Rgba{float(color.r) / 255, float(color.g) / 255, float(color.b) / 255, a * float(color.a) / 255};
+        });
+    }
+    // The project's logo, scaled down to `size` logical pixels by averaging (no shimmering edges).
+    void logo(const sacred::IconImage& image, int x, int y, int size, Uint8 alpha = 255) {
+        if (image.rgba.empty()) {
+            return;
+        }
+        const std::string key = "logo " + std::to_string(size);
+        auto found = shapes_.find(key);
+        SDL_Texture* texture = found != shapes_.end() ? found->second : nullptr;
+        if (!texture) {
+            const int n = std::max(1, int(std::lround(float(size) * scale_)));
+            std::vector<uint32_t> pixels(size_t(n) * size_t(n));
+            const float step = float(image.width) / float(n);
+            for (int ty = 0; ty < n; ++ty) {
+                for (int tx = 0; tx < n; ++tx) {
+                    float sum[4] = {0, 0, 0, 0};
+                    int count = 0;
+                    const int x0 = int(float(tx) * step), x1 = std::max(x0 + 1, int(float(tx + 1) * step));
+                    const int y0 = int(float(ty) * step), y1 = std::max(y0 + 1, int(float(ty + 1) * step));
+                    for (int sy = y0; sy < y1 && sy < image.height; ++sy) {
+                        for (int sx = x0; sx < x1 && sx < image.width; ++sx) {
+                            const uint8_t* p = &image.rgba[(size_t(sy) * size_t(image.width) + size_t(sx)) * 4];
+                            const float a = float(p[3]) / 255;
+                            sum[0] += float(p[0]) * a, sum[1] += float(p[1]) * a, sum[2] += float(p[2]) * a;
+                            sum[3] += a;
+                            ++count;
+                        }
+                    }
+                    const float a = sum[3] / float(std::max(1, count));
+                    auto c = [&](float v) {
+                        return uint32_t(std::lround(sum[3] > 0 ? v / sum[3] : 0));
+                    };
+                    pixels[size_t(ty) * size_t(n) + size_t(tx)] =
+                        uint32_t(std::lround(a * 255)) << 24 | c(sum[0]) << 16 | c(sum[1]) << 8 | c(sum[2]);
+                }
+            }
+            texture = upload(pixels, n, n);
+            shapes_[key] = texture;
+        }
+        SDL_SetTextureAlphaMod(texture, alpha);
+        const SDL_FRect rect{float(x), float(y), float(size), float(size)};
+        SDL_RenderCopyF(renderer_, texture, nullptr, &rect);
+    }
+
     bool inside(SDL_Rect rect) const {
         return mx >= rect.x && mx < rect.x + rect.w && my >= rect.y && my < rect.y + rect.h && mx >= clip.x &&
                mx < clip.x + clip.w && my >= clip.y && my < clip.y + clip.h;
     }
+    enum class Kind { normal, primary, play };
     // A button; true when it was clicked this frame.
-    bool button(SDL_Rect rect, const std::string& label, bool enabled, bool primary = false, bool selected = false) {
+    bool button(SDL_Rect rect, const std::string& label, bool enabled, Kind kind = Kind::normal,
+                const Icon* glyph = nullptr) {
         const bool hover = enabled && inside(rect);
-        const SDL_Color base = !enabled              ? SDL_Color{60, 52, 44, 255}
-                               : primary || selected ? SDL_Color{150, 98, 30, 255}
-                                                     : SDL_Color{82, 66, 48, 255};
-        fill(rect, hover ? SDL_Color{Uint8(base.r + 30), Uint8(base.g + 24), Uint8(base.b + 14), 255} : base);
-        frame(rect, {200, 160, 90, 255});
-        const Text& t = text(label);
-        draw_text(label, rect.x + (rect.w - t.w) / 2, rect.y + (rect.h - t.h) / 2,
-                  enabled ? SDL_Color{245, 230, 200, 255} : SDL_Color{140, 130, 115, 255});
+        const bool gold = kind != Kind::normal;
+        SDL_Color top, bottom, border, ink;
+        if (!enabled) {
+            top = colors.off_top, bottom = colors.off_bottom, border = colors.off_edge, ink = colors.off_ink;
+        } else if (gold) {
+            top = hover ? colors.gold_hover_top : colors.gold_top;
+            bottom = hover ? colors.gold_hover_bottom : colors.gold_bottom;
+            border = colors.gold_edge, ink = colors.gold_ink;
+        } else {
+            top = hover ? colors.button_hover_top : colors.button_top;
+            bottom = hover ? colors.button_hover_bottom : colors.button_bottom;
+            border = hover ? colors.stone : colors.button_edge, ink = colors.ink;
+        }
+        panel(rect, kind == Kind::play ? 10 : 7, top, bottom, border);
+        const Style style = kind == Kind::play ? Style::play : Style::button;
+        const Text& t = text(label, style);
+        const int icon_size = kind == Kind::play ? 20 : 16, gap = glyph ? icon_size + 8 : 0;
+        const int x = rect.x + (rect.w - t.w - gap) / 2;
+        if (glyph) {
+            icon(*glyph, x, rect.y + (rect.h - icon_size) / 2, icon_size, ink);
+        }
+        draw_text(label, x + gap, rect.y + (rect.h - t.h) / 2, ink, style);
+        return hover && clicked;
+    }
+    // A page of the sidebar; true when it was clicked this frame.
+    bool tab(SDL_Rect rect, const std::string& label, Icon glyph, bool active, bool enabled) {
+        const bool hover = enabled && inside(rect);
+        if (active) {
+            panel(rect, 8, colors.tab_top, colors.tab_bottom, colors.tab_edge);
+            panel({rect.x + 1, rect.y + 8, 3, rect.h - 16}, 1, colors.gold, colors.gold, colors.gold, 0);
+        } else if (hover) {
+            panel(rect, 8, colors.hover_top, colors.hover_bottom, colors.hover_edge);
+        }
+        const SDL_Color ink = active ? colors.bright : enabled ? (hover ? colors.ink : colors.dim) : colors.faint;
+        icon(glyph, rect.x + 16, rect.y + (rect.h - 18) / 2, 18, active ? colors.gold : ink);
+        draw_text(label, rect.x + 46, rect.y + (rect.h - text(label, Style::button).h) / 2, ink, Style::button);
         return hover && clicked;
     }
     // "<  value  >": a click on the left third steps back, anywhere else forward. Returns -1, 0 or +1.
     int selector(SDL_Rect rect, const std::string& label, bool enabled, bool changed_from_default) {
         const bool hover = enabled && inside(rect);
-        fill(rect, hover ? SDL_Color{70, 56, 40, 255} : SDL_Color{48, 38, 28, 255});
-        frame(rect, changed_from_default ? colors.gold : colors.line);
-        const SDL_Color arrow = enabled ? colors.gold : colors.line;
-        draw_text("<", rect.x + 10, rect.y + (rect.h - text("<").h) / 2, arrow);
-        draw_text(">", rect.x + rect.w - 10 - text(">").w, rect.y + (rect.h - text(">").h) / 2, arrow);
-        const Text& t = text(label);
-        draw_text(label, rect.x + (rect.w - t.w) / 2, rect.y + (rect.h - t.h) / 2,
-                  enabled ? colors.ink : SDL_Color{140, 130, 115, 255}, Style::body, rect.w - 50);
+        panel(rect, rect.h / 2, hover ? colors.select_hover_top : colors.select_top,
+              hover ? colors.select_hover_bottom : colors.select_bottom,
+              changed_from_default ? colors.gold
+              : hover              ? colors.stone
+                                   : colors.select_edge);
+        const SDL_Color arrow = enabled ? (hover ? colors.bright : colors.gold) : colors.faint;
+        icon(Icon::left, rect.x + 8, rect.y + (rect.h - 16) / 2, 16, arrow);
+        icon(Icon::right, rect.x + rect.w - 24, rect.y + (rect.h - 16) / 2, 16, arrow);
+        const std::string shown = fit(label, Style::body, rect.w - 56);
+        const Text& t = text(shown);
+        draw_text(shown, rect.x + (rect.w - t.w) / 2, rect.y + (rect.h - t.h) / 2,
+                  !enabled               ? colors.faint
+                  : changed_from_default ? colors.bright
+                                         : colors.ink);
         if (!hover || !clicked) {
             return 0;
         }
         return mx < rect.x + rect.w / 3 ? -1 : 1;
     }
+    // A rounded label; returns its width.
+    int chip(const std::string& label, int x, int y) {
+        const Text& t = text(label, Style::small);
+        const int w = t.w + 22;
+        panel({x, y, w, 26}, 13, colors.chip_top, colors.chip_bottom, colors.chip_edge);
+        draw_text(label, x + 11, y + (26 - t.h) / 2, colors.ink, Style::small);
+        return w;
+    }
+    // A round status mark: a check on green or a cross on red.
+    void status(bool good, int x, int y) {
+        panel({x, y, 18, 18}, 9, good ? SDL_Color{120, 190, 100, 255} : SDL_Color{220, 110, 90, 255},
+              good ? SDL_Color{88, 150, 72, 255} : SDL_Color{180, 80, 64, 255},
+              good ? SDL_Color{170, 230, 150, 255} : SDL_Color{250, 160, 140, 255});
+        icon(good ? Icon::check : Icon::cross, x + 1, y + 1, 16, {24, 20, 16, 255});
+    }
 
 private:
+    struct Rgba {
+        float r, g, b, a;
+    };
+    static uint32_t pack(SDL_Color c) { return uint32_t(c.r) << 24 | uint32_t(c.g) << 16 | uint32_t(c.b) << 8 | c.a; }
+    // `fill` over `fill_share` of the pixel and `edge` over `edge_share`, as straight alpha.
+    static Rgba blend(SDL_Color fill, float fill_share, SDL_Color edge, float edge_share) {
+        const float fa = fill_share * float(fill.a) / 255, ea = edge_share * float(edge.a) / 255, a = fa + ea;
+        if (a <= 0) {
+            return {0, 0, 0, 0};
+        }
+        auto channel = [&](Uint8 f, Uint8 e) {
+            return (float(f) * fa + float(e) * ea) / (255 * a);
+        };
+        return {channel(fill.r, edge.r), channel(fill.g, edge.g), channel(fill.b, edge.b), std::min(1.0f, a)};
+    }
+    int px(int logical) const { return -std::max(1, int(std::lround(float(logical) * scale_))); }
+    SDL_Texture* upload(const std::vector<uint32_t>& pixels, int w, int h) {
+        SDL_Texture* texture = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, w, h);
+        SDL_UpdateTexture(texture, nullptr, pixels.data(), w * 4);
+        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+        return texture;
+    }
+    // A cached texture of w x h logical pixels at the renderer's resolution; `paint` gives the colour at a logical
+    // point and the size of one pixel there.
+    SDL_Texture* shape(const std::string& key, int w, int h, const std::function<Rgba(float, float, float)>& paint) {
+        auto found = shapes_.find(key);
+        if (found != shapes_.end()) {
+            return found->second;
+        }
+        const int pw = std::max(1, int(std::lround(float(w) * scale_))),
+                  ph = std::max(1, int(std::lround(float(h) * scale_)));
+        const float pixel = float(w) / float(pw);
+        std::vector<uint32_t> pixels(size_t(pw) * size_t(ph));
+        for (int y = 0; y < ph; ++y) {
+            for (int x = 0; x < pw; ++x) {
+                const Rgba c = paint((float(x) + 0.5f) * pixel, (float(y) + 0.5f) * pixel, pixel);
+                auto byte = [](float v) {
+                    return uint32_t(std::lround(std::clamp(v, 0.0f, 1.0f) * 255));
+                };
+                pixels[size_t(y) * size_t(pw) + size_t(x)] =
+                    byte(c.a) << 24 | byte(c.r) << 16 | byte(c.g) << 8 | byte(c.b);
+            }
+        }
+        return shapes_[key] = upload(pixels, pw, ph);
+    }
+    void draw_shape(const std::string& key, SDL_Rect rect, const std::function<Rgba(float, float, float)>& paint) {
+        SDL_Texture* texture = shape(key, rect.w, rect.h, paint);
+        SDL_SetTextureAlphaMod(texture, 255);
+        const SDL_FRect target{float(rect.x), float(rect.y), float(rect.w), float(rect.h)};
+        SDL_RenderCopyF(renderer_, texture, nullptr, &target);
+    }
+
     SDL_Renderer* renderer_;
-    sacred::Font body_, small_, heading_, title_;
+    float scale_;
+    sacred::Font body_, small_, heading_, title_, page_, button_, play_;
     std::map<std::string, Text> cache_;
+    std::map<std::string, SDL_Texture*> shapes_;
 };
 
 int step(int index, int delta, int count) {
     return count ? ((index + delta) % count + count) % count : 0;
 }
+
+// The summary of the settings page as short labels ("Fullscreen", "render 2x", ...), first letters raised.
+std::vector<std::string> summary_items(const std::string& text) {
+    std::vector<std::string> items;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find(", ", start);
+        std::string item = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (!item.empty()) {
+            item[0] = char(std::toupper(static_cast<unsigned char>(item[0])));
+            items.push_back(item == "FPS at the display's refresh rate" ? "FPS at the display's rate" : item);
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 2;
+    }
+    return items;
+}
+}
+
+// The game's Carolingia (the font of its menus) in the installation, "" when it has none: only the project's name
+// is written with it, everything else with Arial.
+static std::string carolingia(const std::string& game) {
+    for (const char* name : {"font/CAROLING.TTF", "font/Caroling.ttf", "font/caroling.ttf", "FONT/CAROLING.TTF"}) {
+        if (!game.empty() && fs::is_regular_file(fs::path(game) / name)) {
+            return (fs::path(game) / name).string();
+        }
+    }
+    return "";
 }
 
 int main(int, char** argv) {
@@ -575,13 +957,22 @@ int main(int, char** argv) {
         return 1;
     }
     SDL_RenderSetLogicalSize(renderer, W, H);
-    // The project's logo (on macOS SDL also shows it in the Dock); without the bundle's file the default stays.
-    if (sacred::IconImage icon; sacred::load_app_icon(icon)) {
-        sacred::set_window_icon(window, icon);
+    float scale = 1;
+    {
+        int ow = W, oh = H;
+        SDL_GetRendererOutputSize(renderer, &ow, &oh);
+        scale = std::clamp(std::min(float(ow) / float(W), float(oh) / float(H)), 1.0f, 4.0f);
+    }
+    // The project's logo: the window's icon (on macOS SDL also shows it in the Dock) and the sidebar's emblem. In a
+    // build tree it comes from the source's data/icons.
+    sacred::IconImage logo;
+    if (sacred::load_app_icon(logo) || sacred::load_png_icon(source / "data/icons/sacred-native-512.png", logo)) {
+        sacred::set_window_icon(window, logo);
     }
     std::unique_ptr<Ui> ui;
+    std::string name_font; // the font file the UI was made with
     try {
-        ui = std::make_unique<Ui>(renderer);
+        ui = std::make_unique<Ui>(renderer, scale, name_font = carolingia(config.game));
     } catch (const std::exception& error) {
         std::fprintf(stderr, "sacred-launcher: no usable font: %s\n", error.what());
         return 1;
@@ -626,7 +1017,9 @@ int main(int, char** argv) {
         }
     }
     int frames = 0;
-    const SDL_Rect list{0, 72, W, 464}; // the settings page's scrolled area
+    std::string ui_game = config.game;
+    const int left = side + 24, right = W - 24;   // the page's content
+    const SDL_Rect list{side, 88, W - side, 446}; // the settings page's scrolled area
     while (!quit && !launch) {
         ui->clicked = false;
         int wheel = 0;
@@ -677,35 +1070,69 @@ int main(int, char** argv) {
             ui->my = scripted[size_t(frames - 2)].second;
             ui->clicked = true;
         }
+        if (config.game != ui_game) { // another installation: the name's font may now be there (or gone)
+            ui_game = config.game;
+            if (const std::string font = carolingia(config.game); font != name_font) {
+                try {
+                    auto remade = std::make_unique<Ui>(renderer, scale, font);
+                    remade->mx = ui->mx, remade->my = ui->my, remade->clicked = ui->clicked;
+                    ui = std::move(remade);
+                    name_font = font;
+                } catch (const std::exception&) {
+                } // keep the current one
+            }
+        }
         ui->clip = {0, 0, W, H};
         const bool busy = build.running;
-        ui->fill({0, 0, W, H}, {28, 22, 18, 255});
-        ui->fill({0, 0, W, 64}, {48, 34, 22, 255});
-        ui->draw_text("Sacred Native", 28, 14, colors.gold, Style::title);
-        if (ui->button({W - 268, 17, 116, 30}, "Game", true, false, page == Page::play)) {
+        ui->backdrop();
+
+        // ------------------------------------------------------------------------------------------- the sidebar
+        ui->fill({0, 0, side, H}, colors.side_shade);
+        ui->fill({side - 1, 0, 1, H}, colors.side_edge);
+        ui->logo(logo, (side - 132) / 2, 28, 132);
+        ui->draw_centered("Sacred Native", {0, 168, side, 40}, colors.gold, Style::title);
+        ui->divider(24, 226, side - 48, colors.stone, true);
+        if (ui->tab({16, 246, side - 32, 40}, "Game", Icon::game, page == Page::play, true)) {
             page = Page::play;
         }
-        if (ui->button({W - 144, 17, 116, 30}, "Settings", !busy, false, page == Page::settings)) {
+        if (ui->tab({16, 292, side - 32, 40}, "Settings", Icon::gear, page == Page::settings, !busy)) {
             page = Page::settings;
             editing = false;
             SDL_StopTextInput();
         }
 
         if (page == Page::play) {
-            int y = 86;
-            ui->draw_text("Game folder (your installation, only ever read):", 28, y, colors.dim);
-            y += 26;
-            SDL_Rect field{28, y, 600, 30};
-            ui->fill(field, editing ? SDL_Color{50, 40, 30, 255} : SDL_Color{40, 32, 26, 255});
-            ui->frame(field, editing ? colors.gold : colors.line);
-            ui->draw_text(editing ? typed + "|" : (config.game.empty() ? "(none)" : config.game), 36, y + 6, colors.ink,
-                          Style::body, 580);
+            // ------------------------------------------------------------------------------- the game page
+            ui->draw_text(problem.empty() ? "Ready to play" : "Find your Sacred Gold", left, 26, colors.gold,
+                          Style::page);
+            ui->draw_text(problem.empty() ? "Your installation is checked; Play starts the game."
+                                          : "Sacred Native runs your own copy of Sacred Gold 2.28.",
+                          left, 58, colors.dim, Style::small);
+
+            const int status_lines =
+                problem.empty() ? 1 : int(ui->wrap(problem, right - left - 50, Style::body).size());
+            SDL_Rect card{left - 8, 92, right - left + 16, 112 + 20 * status_lines};
+            ui->panel(card, 12, colors.panel_top, colors.panel_bottom, colors.panel_edge);
+            ui->icon(Icon::folder, left + 8, card.y + 16, 18, colors.gold);
+            ui->draw_text("Game folder", left + 34, card.y + 16, colors.ink, Style::heading);
+            ui->draw_text("only ever read", right - 8 - ui->text("only ever read", Style::small).w, card.y + 18,
+                          colors.faint, Style::small);
+            SDL_Rect field{left + 8, card.y + 46, right - left - 140, 34};
+            const bool field_hover = !busy && ui->inside(field);
+            ui->panel(field, 7, colors.field_top, colors.field_bottom,
+                      editing       ? colors.gold
+                      : field_hover ? colors.stone
+                                    : colors.field_edge);
+            ui->draw_text(editing ? typed + "|" : (config.game.empty() ? "(none)" : config.game), field.x + 12,
+                          field.y + 8, config.game.empty() && !editing ? colors.faint : colors.ink, Style::body,
+                          field.w - 24);
             if (!busy && ui->clicked && ui->inside(field) && !editing) {
                 editing = true;
                 typed = config.game;
                 SDL_StartTextInput();
             }
-            if (ui->button({638, y, 134, 30}, "Browse...", !busy)) {
+            const Icon folder = Icon::folder;
+            if (ui->button({right - 8 - 116, field.y, 116, 34}, "Browse", !busy, Ui::Kind::normal, &folder)) {
                 const std::string chosen =
                     choose_folder(config.game.empty() ? env("HOME") : config.game, "Sacred Gold folder");
                 if (!chosen.empty()) {
@@ -715,56 +1142,91 @@ int main(int, char** argv) {
                 editing = false;
                 SDL_StopTextInput();
             }
-            y += 38;
-            ui->draw_text(problem.empty() ? "Sacred Gold 2.28 found." : problem, 28, y,
-                          problem.empty() ? colors.good : colors.bad, Style::body, 744);
+            ui->status(problem.empty(), left + 8, card.y + 96);
+            ui->draw_wrapped(problem.empty() ? "Sacred Gold 2.28 found" : problem, left + 34, card.y + 96,
+                             right - left - 50, problem.empty() ? colors.good : colors.bad, Style::body, 20);
 
-            y += 44;
-            ui->draw_text("Settings", 28, y, colors.gold, Style::heading);
-            y += 28;
+            card = {left - 8, card.y + card.h + 14, right - left + 16, 0};
             SettingsFile shown;
             for (const auto& entry : choices.values) {
                 shown.set(entry.first, entry.second);
             }
-            y += ui->draw_wrapped(summary(shown, choices.size, config.fullscreen) + ".", 28, y, 600, colors.ink,
-                                  Style::body, 22);
-            if (ui->button({638, y - 26, 134, 30}, "Change...", !busy)) {
+            const std::vector<std::string> items = summary_items(summary(shown, choices.size, config.fullscreen));
+            { // the chips' height first, for the card behind them
+                int x = left + 8, rows = 1;
+                for (const auto& item : items) {
+                    const int w = ui->text(item, Style::small).w + 22;
+                    if (x + w > right - 8) {
+                        x = left + 8, ++rows;
+                    }
+                    x += w + 8;
+                }
+                card.h = 52 + rows * 34 + 40;
+            }
+            ui->panel(card, 12, colors.panel_top, colors.panel_bottom, colors.panel_edge);
+            ui->icon(Icon::gear, left + 8, card.y + 16, 18, colors.gold);
+            ui->draw_text("Settings", left + 34, card.y + 16, colors.ink, Style::heading);
+            if (ui->button({right - 8 - 96, card.y + 11, 96, 28}, "Change", !busy)) {
                 page = Page::settings;
             }
-            y += 14;
-            ui->draw_text("Settings and saves:", 28, y, colors.dim);
-            ui->draw_text(profile.string(), 28 + ui->text("Settings and saves:").w + 8, y, colors.dim, Style::body,
-                          736 - ui->text("Settings and saves:").w);
+            int x = left + 8, y = card.y + 52;
+            for (const auto& item : items) {
+                const int w = ui->text(item, Style::small).w + 22;
+                if (x + w > right - 8) {
+                    x = left + 8, y += 34;
+                }
+                x += ui->chip(item, x, y) + 8;
+            }
+            y += 42;
+            ui->fill({left + 8, y - 8, right - left - 16, 1}, colors.line);
+            ui->draw_text("Settings and saves:", left + 8, y, colors.faint, Style::small);
+            const int label_w = ui->text("Settings and saves:", Style::small).w + 6;
+            ui->draw_text(profile.string(), left + 8 + label_w, y, colors.dim, Style::small,
+                          right - left - 16 - label_w);
 
-            y += 46;
+            y = card.y + card.h + 14;
             if (busy || build.finished) {
                 std::lock_guard<std::mutex> guard(build.lock);
+                SDL_Rect progress{left - 8, y, right - left + 16, build.failed ? 120 : 92};
+                ui->panel(progress, 12, colors.panel_top, colors.panel_bottom,
+                          build.failed ? SDL_Color{150, 70, 56, 255} : colors.panel_edge);
                 ui->draw_text(build.failed         ? "The build failed:"
                               : build.step.empty() ? "Starting..."
                                                    : build.step,
-                              28, y, build.failed ? colors.bad : colors.ink);
+                              left + 8, y + 14, build.failed ? colors.bad : colors.ink, Style::heading);
                 if (!build.failed) {
-                    SDL_Rect bar{28, y + 26, 744, 16};
-                    ui->frame(bar, colors.line);
-                    const float share = build.total ? float(build.done) / float(build.total) : 0.0f;
-                    ui->fill({bar.x + 2, bar.y + 2, int(float(bar.w - 4) * share), bar.h - 4}, {200, 140, 50, 255});
                     if (build.total) {
                         const std::string count = std::to_string(build.done) + " / " + std::to_string(build.total);
-                        ui->draw_text(count, 772 - ui->text(count).w, y, colors.dim);
+                        ui->draw_text(count, right - 8 - ui->text(count, Style::small).w, y + 16, colors.dim,
+                                      Style::small);
                     }
-                    ui->draw_text(
-                        "The first start translates the game from your files; this takes a few minutes, once.", 28,
-                        y + 48, colors.dim, Style::body, 744);
+                    const SDL_Rect bar{left + 8, y + 42, right - left - 16, 12};
+                    ui->panel(bar, 6, colors.field_top, colors.field_bottom, colors.field_edge);
+                    const float share = build.total ? float(build.done) / float(build.total) : 0.0f;
+                    const int filled = int(float(bar.w - 4) * share);
+                    if (filled >= 8) {
+                        ui->panel({bar.x + 2, bar.y + 2, filled, bar.h - 4}, 4, colors.gold_hover_top,
+                                  colors.gold_bottom, colors.gold_hover_top, 0);
+                    }
+                    ui->draw_text("The first start translates the game from your files: a few minutes, once.", left + 8,
+                                  y + 64, colors.faint, Style::small, right - left - 16);
                 } else {
                     std::istringstream lines(build.error);
-                    int line_y = y + 24;
-                    for (std::string line; std::getline(lines, line) && line_y < 530; line_y += 20) {
-                        ui->draw_text(line, 28, line_y, colors.bad, Style::body, 744);
+                    int line_y = y + 40;
+                    for (std::string line; std::getline(lines, line) && line_y < y + 110; line_y += 18) {
+                        ui->draw_text(line, left + 8, line_y, colors.bad, Style::small, right - left - 16);
                     }
                 }
+            } else {
+                ui->icon(Icon::info, left, H - 40, 16, colors.faint);
+                ui->draw_text("Alt+Enter (Option+Enter on macOS) switches between window and fullscreen in game.",
+                              left + 24, H - 40, colors.faint, Style::small, right - left - 24);
             }
         } else {
             // ------------------------------------------------------------------------------ the settings page
+            ui->draw_text("Settings", left, 26, colors.gold, Style::page);
+            ui->draw_text("Written to the game's Settings.cfg as soon as you change them.", left, 58, colors.dim,
+                          Style::small);
             const int max_scroll = std::max(0, content_height - list.h);
             scroll -= wheel * 40;
             if (content_height) {
@@ -772,12 +1234,15 @@ int main(int, char** argv) {
             }
             SDL_RenderSetClipRect(renderer, &list);
             ui->clip = list;
-            const int label_x = 28, help_w = 430, control_x = 500, control_w = 272;
-            int y = list.y + 14 - scroll;
-            auto heading = [&](const char* title) {
+            const int label_x = left, control_w = 196, control_x = right - control_w, help_w = control_x - 20 - left;
+            int y = list.y + 8 - scroll;
+            auto heading = [&](Section section) {
+                static const Icon icons[] = {Icon::monitor, Icon::eye, Icon::picture, Icon::shield};
                 y += 6;
-                ui->draw_text(title, label_x, y, colors.gold, Style::heading);
-                ui->fill({label_x, y + 24, control_x + control_w - label_x, 1}, colors.line);
+                ui->icon(icons[int(section)], label_x, y, 18, colors.gold);
+                ui->draw_text(section_title(section), label_x + 26, y, colors.gold, Style::heading);
+                const int after = label_x + 26 + ui->text(section_title(section), Style::heading).w + 12;
+                ui->fill({after, y + 10, right - after, 1}, colors.line);
                 y += 34;
             };
             // One row: its title and help on the left, its control on the right; `warning` under the help.
@@ -790,7 +1255,7 @@ int main(int, char** argv) {
                         ui->draw_wrapped(warning, label_x, y + height + 2, help_w, colors.warn, Style::small, 17) + 2;
                 }
                 control(y + 2);
-                y += std::max(height, 34) + 16;
+                y += std::max(height, 34) + 18;
             };
             // A row for one of options(): its choices plus the file's value when that is none of them.
             auto option_row = [&](const std::string& key, const std::string& warning = "") {
@@ -804,7 +1269,7 @@ int main(int, char** argv) {
                 row(option.title, option.help, warning, [&](int top) {
                     const bool changed = index != option.index_of(option.recommended);
                     const int delta =
-                        ui->selector({control_x, top, control_w, 30}, list_of[index].label, !busy, changed);
+                        ui->selector({control_x, top, control_w, 32}, list_of[index].label, !busy, changed);
                     if (delta) {
                         choices.values[key] = list_of[size_t(step(int(index), delta, int(list_of.size())))].value;
                         persist();
@@ -812,12 +1277,12 @@ int main(int, char** argv) {
                 });
             };
 
-            heading(section_title(Section::display));
+            heading(Section::display);
             row("Display mode",
                 "Fullscreen covers the whole display with a borderless window. Alt+Enter (Option+Enter on macOS) "
                 "switches while you play.",
                 "", [&](int top) {
-                    if (ui->selector({control_x, top, control_w, 30}, config.fullscreen ? "Fullscreen" : "Window",
+                    if (ui->selector({control_x, top, control_w, 32}, config.fullscreen ? "Fullscreen" : "Window",
                                      !busy, config.fullscreen != default_fullscreen)) {
                         config.fullscreen = !config.fullscreen;
                         persist();
@@ -834,7 +1299,7 @@ int main(int, char** argv) {
                     "The game's own screen size. Larger sizes show more of the world around the hero; menus keep "
                     "their 1024 x 768 layout, centred, with wide pictures at the sides.",
                     warning, [&](int top) {
-                        const int delta = ui->selector({control_x, top, control_w, 30}, sizes[index].label(), !busy,
+                        const int delta = ui->selector({control_x, top, control_w, 32}, sizes[index].label(), !busy,
                                                        !(sizes[index] == ScreenSize{0, 0, default_fit}));
                         if (delta) {
                             choices.size = sizes[size_t(step(int(index), delta, int(sizes.size())))];
@@ -845,18 +1310,18 @@ int main(int, char** argv) {
             }
             option_row("FPS_LIMIT");
             option_row("SHOW_FPS");
-            heading(section_title(Section::look));
+            heading(Section::look);
             option_row("LEGACY_UI");
-            heading(section_title(Section::graphics));
+            heading(Section::graphics);
             option_row("RENDER_SCALE");
             {
-                const Option& scale = *find_option("RENDER_SCALE");
+                const Option& scale_option = *find_option("RENDER_SCALE");
                 const Option& upscale = *find_option("TEXTURE_UPSCALE");
                 const bool hidden = upscale.index_of(choices.values["TEXTURE_UPSCALE"]) != 0 &&
-                                    scale.index_of(choices.values["RENDER_SCALE"]) == 0;
+                                    scale_option.index_of(choices.values["RENDER_SCALE"]) == 0;
                 option_row("TEXTURE_UPSCALE", hidden ? "Set the render scale to 2x or more to see them." : "");
             }
-            heading(section_title(Section::gameplay));
+            heading(Section::gameplay);
             option_row("AUTO_PICKUP");
             option_row("GAMEPAD");
             content_height = y + scroll - list.y;
@@ -865,11 +1330,12 @@ int main(int, char** argv) {
             if (max_scroll > 0) { // where the list stands
                 const int bar_h = std::max(30, list.h * list.h / content_height);
                 const int bar_y = list.y + (list.h - bar_h) * scroll / max_scroll;
-                ui->fill({W - 8, list.y, 4, list.h}, {48, 38, 28, 255});
-                ui->fill({W - 8, bar_y, 4, bar_h}, colors.line);
+                ui->panel({W - 10, list.y + 4, 4, list.h - 8}, 2, colors.track, colors.track, colors.track, 0);
+                ui->panel({W - 10, bar_y + 4, 4, bar_h - 8}, 2, colors.stone, colors.stone, colors.stone, 0);
             }
-            ui->fill({0, list.y + list.h, W, 1}, colors.line);
-            if (ui->button({28, 554, 150, 32}, "Defaults", !busy)) {
+            ui->divider(side + 12, list.y + list.h + 1, W - side - 24, colors.line, false);
+            const Icon reset = Icon::reset;
+            if (ui->button({left, 550, 130, 34}, "Defaults", !busy, Ui::Kind::normal, &reset)) {
                 SettingsFile file;
                 for (const auto& entry : choices.values) {
                     file.set(entry.first, entry.second);
@@ -880,13 +1346,24 @@ int main(int, char** argv) {
                 choices = read_choices(file, config);
                 persist();
             }
-            ui->draw_text(saved_note, 192, 562, colors.dim, Style::small, 400);
+            { // "Saved to" stays; the path loses its start when it is too long
+                const std::string prefix = "Saved to ";
+                const bool path = saved_note.rfind(prefix, 0) == 0;
+                const int prefix_w = path ? ui->text(prefix, Style::small).w + 4 : 0;
+                if (path) {
+                    ui->draw_text(prefix, left + 144, 559, colors.faint, Style::small);
+                }
+                ui->draw_text(path ? saved_note.substr(prefix.size()) : saved_note, left + 144 + prefix_w, 559,
+                              colors.faint, Style::small, right - left - 144 - prefix_w);
+            }
         }
 
         if (build.finished && !build.failed) {
             launch = true;
         }
-        if (ui->button({612, 548, 160, 40}, busy ? "Building..." : "Play", !busy && problem.empty(), true)) {
+        const Icon play = Icon::play;
+        if (ui->button({16, H - 76, side - 32, 56}, busy ? "Building..." : "Play", !busy && problem.empty(),
+                       Ui::Kind::play, busy ? nullptr : &play)) {
             page = Page::play;
             persist();
             std::error_code status;

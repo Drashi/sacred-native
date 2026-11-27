@@ -10,6 +10,10 @@ moment back and continues in the per-instruction code at that instruction.
 
 Exponent bounds: each value carries (lo, hi, q): it is zero or 2^lo <= |v| <= 2^hi, and a multiple of 2^q. While a
 result provably stays a normal double (lo >= -1022, hi <= 1023) it is the x87 result and needs no check.
+
+A direct CALL of the C runtime's _ftol (generate.py names the pinned routine) is an operation of a run as well: the
+routine pops ST0 as a truncated 64-bit integer into EDX:EAX. The run does what a call of it leaves behind (registers,
+flags, the bytes below ESP, the x87 state) and goes on behind the call, into the block that starts there.
 """
 from __future__ import annotations
 
@@ -32,6 +36,25 @@ SUPPORTED = (_CONTROL | _BINARY | _COMPARE |
              {"FLD", "FILD", "FLD1", "FLDZ", "FST", "FSTP", "FIST", "FISTP", "FCHS", "FABS", "FXCH", "FSQRT"})
 # Instructions after which C1 holds a value the double code does not compute ("computed"), or zero ("clear").
 _C1_NONE = {"FXCH", "FCHS", "FABS"} | _CONTROL
+
+
+@dataclass(frozen=True)
+class Ftol:
+    """The _ftol routine of a module: the address and opcode word of its FISTP m64 (the x87 instruction pointer a
+    call leaves), the address of its RET and the instructions one call executes, the RET included."""
+    fistp: int
+    opcode: int
+    ret: int
+    length: int
+
+
+@dataclass(frozen=True)
+class Call:
+    """A lowered CALL at an instruction index: the routine, the return address, and the instruction count of the
+    block that starts behind the call (None when the run cannot go on there)."""
+    routine: Ftol
+    back: int
+    block: int | None
 
 
 class Stop(Exception):
@@ -89,12 +112,15 @@ def inert(ins, emitted: list[str], needs_eip) -> bool:
 
 
 class Compiler:
-    def __init__(self, image, instructions, emitted, observed):
+    def __init__(self, image, instructions, emitted, observed, calls=None, verify=False):
         self.image = image
         self.instructions = instructions
         self.emitted = emitted
         self.observed = observed   # instruction index -> its C1 is read (FNSTSW or the end of the run)
+        self.calls = calls or {}   # instruction index -> Call
+        self.verify = verify       # the one-call run of the verify mode (x87_fast.h)
         self.start = None
+        self.end = None
         self.s = State()
         self.lines: list[str] = []
         self.n = 0
@@ -163,9 +189,16 @@ class Compiler:
         has_memory = any(T.parse_operand(o).kind == "mem" for o in ins.ops if o.strip())
         dp = before.dp if not has_memory and before.dp is not None else None
         positions = sorted(before.dirty)
-        # The run's first instruction resumes behind the double block (its label leads back into it).
-        label = f"F_{ins.addr:08x}" if k == self.start else f"L_{ins.addr:08x}"
-        target = f"X87F_COUNT(1); goto {label};"
+        # The run's first instruction resumes behind the double block (its label leads back into it). The block
+        # start behind a lowered call resumes behind its tick, which the run has counted (T_, with the EIP store
+        # of that block start); the call itself resumes in front of its own tick, which the run has not counted.
+        if k == self.start:
+            target = f"X87F_COUNT(1); goto {'V' if self.verify else 'F'}_{ins.addr:08x};"
+        elif k - 1 in self.calls and k not in self.calls:
+            target = f"X87F_COUNT(1); c->eip = 0x{ins.addr:08x}u; goto T_{ins.addr:08x};"
+        else:
+            target = f"X87F_COUNT(1); goto L_{ins.addr:08x};"
+
         if not positions and before.top == 0 and not before.sw_dirty and dp is None:
             self.lines.append(f"if (RECOMP_UNLIKELY(!({condition}))) {{ {target} }}")
             return
@@ -242,7 +275,40 @@ class Compiler:
 
         return Slot(r, bounds)
 
+    def call(self, k: int) -> None:
+        """CALL _ftol: everything the routine leaves behind (x87_fast.h lists it), in the order it writes."""
+        site = self.calls[k]
+        routine = site.routine
+        before = copy.deepcopy(self.s)
+        value = self.read(0)
+        self.s.ip = (routine.fistp, routine.opcode)
+        # Truncation fits (anything else is the routine's invalid operation), the call is still a direct one (not
+        # traced, nothing replaced the routine) and the mode asks for this path.
+        self.deopt(k, before, f"x87f_ftol_ok({value.var}, {2 if self.verify else 1}u) && recomp_direct_enabled")
+        esp = self.new("c->r[4]", "uint32_t")
+        result = self.new(f"(int64_t){value.var}", "int64_t")
+        # The call's own tick is counted here unless the run starts at the call (its tick ran in front of the run).
+        count = routine.length + (k != self.start)
+        self.lines += [
+            f"wr32({esp} - 4u, 0x{site.back:08x}u); wr32({esp} - 8u, c->r[5]); wr16({esp} - 10u, c->fpu_cw); "
+            f"wr16({esp} - 12u, (uint16_t)(c->fpu_cw | 0xc00u)); wr64({esp} - 20u, (uint64_t){result});",
+            f"c->r[0] = (uint32_t)(uint64_t){result}; c->r[2] = (uint32_t)((uint64_t){result} >> 32);",
+            "c->eflags_cf = 0; c->eflags_of = 0; c->eflags_zf = 0; c->eflags_sf = (c->fpu_cw >> 15) & 1u; "
+            "c->eflags_pf = parity8(((uint32_t)(c->fpu_cw >> 8) | 0xcu) & 0xffu); "
+            f"c->eflags_af = ((({esp} - 8u) ^ 0xfffffff4u ^ ({esp} - 20u)) >> 4) & 1u;",
+            f"c->eip = 0x{site.back:08x}u; c->source_pc = 0x{routine.ret:08x}u; c->budget += {count}u;"]
+        if self.end is not None and k < self.end and site.block is not None and k + 1 not in self.calls:
+            self.lines.append(f"c->budget += {site.block}u;")  # the block behind the call, entered by the run
+
+        self.s.dp = self.new(f"{esp} - 20u", "uint32_t")
+        self.c1(k, "0")
+        self.pop()
+
     def step(self, k: int) -> None:
+        if k in self.calls:
+            self.call(k)
+            return
+
         ins = self.instructions[k]
         m = ins.mnem
         if m not in SUPPORTED:
@@ -406,10 +472,11 @@ def c1_kind(ins) -> str:
     return "write"
 
 
-def observed_writers(instructions: list) -> dict[int, bool]:
+def observed_writers(instructions: list, calls: frozenset[int] = frozenset()) -> dict[int, bool]:
+    """Offset in the run -> whether the C1 that instruction sets is read. `calls`: offsets of lowered calls."""
     result, pending = {}, True        # the end of the run observes the last writer
     for k in range(len(instructions) - 1, -1, -1):
-        kind = c1_kind(instructions[k])
+        kind = "write" if k in calls else c1_kind(instructions[k])
         if kind == "observe":
             pending = True
         elif kind == "write":
@@ -419,15 +486,18 @@ def observed_writers(instructions: list) -> dict[int, bool]:
     return result
 
 
-def compile_run(image, instructions, emitted, start: int, limit: int, inert_at,
-                exit_lines) -> tuple[int, list[str]] | None:
-    """The double version of the run starting at `start` (instructions start..end, end < limit), or None."""
+def compile_run(image, instructions, emitted, start: int, limit: int, inert_at, exit_lines,
+                calls: dict[int, Call] | None = None, verify: bool = False) -> tuple[int, list[str]] | None:
+    """The double version of the run starting at `start` (instructions start..end, end < limit), or None.
+    `calls`: the lowered calls by instruction index. `verify`: the run of one lowered call that the verify mode
+    executes in front of the real call (its exit_lines hand the result over)."""
+    calls = calls or {}
     # Pass 1: how far the run reaches, with every C1 observed (only the extent matters).
-    probe = Compiler(image, instructions, emitted, {k: True for k in range(len(instructions))})
+    probe = Compiler(image, instructions, emitted, {k: True for k in range(len(instructions))}, calls, verify)
     probe.start = start
     end = start - 1
     for k in range(start, limit):
-        if instructions[k].mnem.startswith("F"):
+        if instructions[k].mnem.startswith("F") or k in calls:
             state, lines, n = copy.deepcopy(probe.s), list(probe.lines), probe.n
             try:
                 probe.step(k)
@@ -441,16 +511,18 @@ def compile_run(image, instructions, emitted, start: int, limit: int, inert_at,
 
     run = instructions[start:end + 1]
     x87 = [ins for ins in run if ins.mnem.startswith("F")]
-    if len(x87) < 2 or all(ins.mnem in _CONTROL | {"FXCH"} for ins in x87):
+    lowered = frozenset(k - start for k in range(start, end + 1) if k in calls)
+    # A lowered call is worth a run by itself: it stands for four x87 instructions and two transfers.
+    if not lowered and (len(x87) < 2 or all(ins.mnem in _CONTROL | {"FXCH"} for ins in x87)):
         return None
 
     # Pass 2: the real code, C1 computed only where it is read.
-    observed = {start + k: v for k, v in observed_writers(run).items()}
-    compiler = Compiler(image, instructions, emitted, observed)
-    compiler.start = start
+    observed = {start + k: v for k, v in observed_writers(run, lowered).items()}
+    compiler = Compiler(image, instructions, emitted, observed, calls, verify)
+    compiler.start, compiler.end = start, end
     body: list[str] = []
     for k in range(start, end + 1):
-        if instructions[k].mnem.startswith("F"):
+        if instructions[k].mnem.startswith("F") or k in calls:
             compiler.step(k)
         else:
             compiler.lines += emitted[k]
@@ -464,7 +536,10 @@ def compile_run(image, instructions, emitted, start: int, limit: int, inert_at,
         mask |= 3 << (2 * (p & 7))
         expect |= 3 << (2 * (p & 7))
 
-    name = f"F_{instructions[start].addr:08x}"
+    name = f"{'V' if verify else 'F'}_{instructions[start].addr:08x}"
+    if verify:
+        body += ["if (RECOMP_UNLIKELY(x87f_ftol_mode == 2u)) {", "x87f_ftol_verify_begin(c);"]
+
     body.append(f"if (x87f_enter(c, 0x{mask:x}u, 0x{expect:x}u)) {{  /* x87 run to {instructions[end].addr:08x} */")
     body.append("const unsigned t0_ = c->fpu_top;")
     body.append("uint16_t sw_ = c->fpu_sw;")
@@ -497,5 +572,8 @@ def compile_run(image, instructions, emitted, start: int, limit: int, inert_at,
     body += ["}", f"{name}: ;"]
     if not any("sw_" in line for k, line in enumerate(body) if k > sw_at):
         del body[sw_at]  # a run that neither reads nor sets the status word (unused variable)
+
+    if verify:
+        body.append("}")
 
     return end, body

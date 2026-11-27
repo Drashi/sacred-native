@@ -1,5 +1,6 @@
 /* The inline x87 fast paths (runtime/cpu/x87.h) against their SoftFloat reference: every result bit, status word
  * and pending-exception state must match, for operands the fast path takes and for its boundaries. */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "x86.h"
@@ -184,6 +185,44 @@ int main(void) {
 
         CHECK(!memcmp(written[0], written[1], 8) && c[0].fpu_sw == c[1].fpu_sw && c[0].fpu_pending == c[1].fpu_pending,
               "store%u %04x:%016llx", width, v.signExp, (unsigned long long)v.signif);
+    }
+
+    /* CALL _ftol in a run (x87_fast.h): for a value the run takes, the routine's FLDCW (truncate), FISTP m64 and
+     * FLDCW (back) leave the truncated integer, C1 clear and nothing else changed; the run refuses any other. */
+    for (unsigned i = 0; i < 2000000; i++) {
+        const uint64_t r = next();
+        const int exponent = (int)(r % 140) - 70; /* 2^-70 .. 2^69: both sides of the 64-bit range */
+        double v = ldexp((double)(next() >> 11) * 0x1p-53 + ((r >> 8) & 1 ? 1.0 : 0.0), exponent);
+        if ((r >> 9) % 64 == 0) {
+            v = (r >> 16) & 1 ? 0x1p63 : -0x1p63; /* the edges: 2^63 is out, -2^63 is in */
+        }
+
+        if ((r >> 20) & 1) {
+            v = -v;
+        }
+
+        if ((r >> 21) % 32 == 0) {
+            v = trunc(v); /* exact conversions */
+        }
+
+        const uint16_t cw = (uint16_t)(0x027f | ((r >> 30) & 1 ? 0x1000 : 0)),
+                       sw = (uint16_t)(0x20 | (next() & 0x4700));
+        X86 c;
+        start(&c, cw, sw);
+        x87_push(&c, x87f_ext(v));
+        c.fpu_sw = sw;
+        x87_set_cw(&c, (uint16_t)(cw | 0xc00u));
+        const int64_t routine = x87_to_integer(&c, x87_get(&c, 0), 64, 0);
+        fdrop(&c);
+        x87_set_cw(&c, cw);
+        if (x87f_ftol_ok(v, 1)) {
+            CHECK(routine == (int64_t)v && c.fpu_sw == (uint16_t)(sw & ~0x200u) && c.fpu_pending == 0 &&
+                      c.fpu_cw == cw && c.fpu_tag == 0xffffu,
+                  "ftol %a: routine %lld sw=%04x", v, (long long)routine, c.fpu_sw);
+        } else {
+            CHECK(routine == INT64_MIN && (c.fpu_sw & 1u), "ftol %a outside the range: routine %lld sw=%04x", v,
+                  (long long)routine, c.fpu_sw);
+        }
     }
 
     printf("x87 fast paths: %u checks passed, %u binary operations eligible for the fast path\n", checks, fast_taken);

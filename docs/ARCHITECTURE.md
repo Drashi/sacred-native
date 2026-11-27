@@ -65,7 +65,9 @@ with `-Werror`.
 - **Fast path.** In the state the game actually runs in (precision 53 or 24 bits, round to nearest) additions,
   subtractions, multiplications and divisions of ordinary operands use host doubles, with exact status bits derived
   from the rounding error (`runtime/cpu/x87.h`, tested against the SoftFloat path in `tests/cpu/x87_fast_tests.c`).
-  Anything else takes the SoftFloat path. `tools/lift/x87_fast.py` lowers whole runs of x87 instructions.
+  Anything else takes the SoftFloat path. `tools/lift/x87_fast.py` lowers whole runs of x87 instructions; a run takes
+  a direct call of the C runtime's `_ftol` in as one operation and goes on behind it (`SACRED_FTOL_INLINE=verify`
+  compares that with the routine while the game runs, `=0` keeps the call).
 - **MMX** aliases the x87 registers; **SSE/3DNow** forms that the game executes are implemented lane by lane
   (`runtime/cpu/simd.cpp`) with MXCSR rounding and status.
 - **CPUID** answers from a fixed profile (`data/entry-cpuid.json`), never from the host.

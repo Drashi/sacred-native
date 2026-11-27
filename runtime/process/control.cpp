@@ -3,6 +3,7 @@
 #include "seh.h"
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
@@ -536,23 +537,45 @@ void Control::observe(uint32_t target) {
     }
 }
 
+// A host function as the target of a direct call or jump (seh.h recomp_direct_target): dispatch() of it, exactly as
+// the driver would do next, but entered from the calling region. That region goes on behind its call when the host
+// function came back to the return address (RECOMP_DIRECT_BACK), so the regions that called it directly stay on the
+// host stack instead of returning to the driver one by one and being entered again at every return address. A host
+// function that transfers elsewhere leaves a pending transfer or another EIP, and the regions return as before.
+static void host_direct(X86* cpu) {
+    Control::of(cpu).dispatch(cpu->eip, CallEntry);
+}
+
+static const bool host_calls_direct = [] {
+    const char* value = std::getenv("SACRED_HOST_DIRECT");
+    return !(value && value[0] == '0');
+}();
+
 void (*Control::direct_target(uint32_t target))(X86*) {
     DispatchSlot& slot = dispatch_cache_[(target ^ (target >> 13)) & (dispatch_slots - 1)];
     if (slot.target != target) {
-        if ((target >= layout::returns && target < layout::returns + Memory::page_size) || hosts_.count(target) ||
+        if ((target >= layout::returns && target < layout::returns + Memory::page_size) ||
             unimplemented_.count(target)) {
             return nullptr;
         }
 
-        const Entry* found = entries_.find(target);
-        if (!found || (found->kinds & (CallEntry | BlockEntry)) != (CallEntry | BlockEntry)) {
-            return nullptr;
-        }
+        if (auto host = hosts_.find(target); host != hosts_.end()) {
+            slot = DispatchSlot{target, 0, nullptr, &host->second};
+        } else {
+            const Entry* found = entries_.find(target);
+            if (!found || (found->kinds & (CallEntry | BlockEntry)) != (CallEntry | BlockEntry)) {
+                return nullptr;
+            }
 
-        slot = DispatchSlot{target, found->kinds, found->function, nullptr};
+            slot = DispatchSlot{target, found->kinds, found->function, nullptr};
+        }
     }
 
-    if (slot.host || (slot.kinds & (CallEntry | BlockEntry)) != (CallEntry | BlockEntry)) {
+    if (slot.host) {
+        return host_calls_direct ? &host_direct : nullptr;
+    }
+
+    if ((slot.kinds & (CallEntry | BlockEntry)) != (CallEntry | BlockEntry)) {
         return nullptr;
     }
 

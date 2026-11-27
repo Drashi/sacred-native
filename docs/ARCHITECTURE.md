@@ -91,7 +91,8 @@ The CPU semantics were checked instruction by instruction against reference impl
 - **Calls into the host.** Each import has a declared calling convention, argument layout and stack cleanup
   (`runtime/process/control.cpp`, `boundary.c`). Guest pointers are never cast to host function pointers, and variadic
   functions such as `wsprintf` parse the guest stack themselves. An import without an implementation stops the program
-  with its name and caller.
+  with its name and caller. A host function called from a region that was itself called directly is dispatched from
+  that region, so the chain of direct calls stays in place (`SACRED_HOST_DIRECT=0` returns to the driver first).
 - **Exceptions.** The guest's SEH chain, MSVC C++ exception metadata and unwinding run as translated guest code. A
   guest exception is dispatched through guest structures; host `longjmp` happens only in the C driver that owns the
   checkpoint, after native resources are released.

@@ -156,6 +156,11 @@ All off by default; see `tools/dist/BUNDLE_README.md` for the user-facing option
   to the canvas edges (drawn one picture pixel per canvas pixel) and draws the water from textures twice as wide
   (`wide_water_texture`): the original in the middle, then the picture's own painted water projected back onto the
   floor when it matches the live water (the Sacred main menu), otherwise patches of the floor's object-free part.
+  The network windows (local network and internet lobby, account, password) are 1024x768 screens drawn at the
+  frame's left inside main menu frames: their window draw raises screen flag 0x2000, which shows them as a still
+  screen (shown-inset word 2, so message boxes keep their place) with the `network` picture around it: made at start
+  from their stone tiles, mirrored out to the sides. Creating a network game starts `GameServer.exe`, which the port
+  does not run: `CreateProcessA` fails as for a missing file and the game reports "Initialization failed".
 
 ## Testing
 

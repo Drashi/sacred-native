@@ -106,7 +106,7 @@ private:
     bool inset_fresh_ = false;     // the last present found the word raised (not the repeat present of a frame)
     uint32_t inset_screen_ = 0;    // screen flags of the last raise (bits 8..15 of the word, shifted down)
     static constexpr uint32_t inset_screen_world_map = 1, inset_screen_options = 2, inset_screen_character = 4,
-                              inset_screen_main = 8, inset_screen_loading = 0x10;
+                              inset_screen_main = 8, inset_screen_loading = 0x10, inset_screen_network = 0x20;
     Control& control_;
     const Loader& loader_;
     Menu* menu_;

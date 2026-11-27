@@ -63,8 +63,9 @@ int main(int argc, char** argv) {
             }
         }
 
-        if (backdrops.size() != pairs) {
-            throw std::runtime_error("FAIL: not every pair loaded");
+        // Every pair, then the network windows' picture made from their tiles (network_picture).
+        if (backdrops.size() != pairs + 1 || backdrops.find("network") != int(pairs)) {
+            throw std::runtime_error("FAIL: not every pair loaded, or no network picture after them");
         }
 
         std::map<std::string, std::string> expected;
@@ -74,7 +75,7 @@ int main(int argc, char** argv) {
         }
 
         unsigned hashed = 0;
-        for (size_t i = 0; i < backdrops.size(); ++i) {
+        for (size_t i = 0; i < pairs; ++i) {
             const Backdrop& picture = backdrops.at(i);
             const auto digest = host_sha256(picture.rgba.data(), picture.rgba.size());
             char hex[65];
@@ -95,7 +96,7 @@ int main(int argc, char** argv) {
         }
 
         if (argc > 3) {
-            for (size_t i = 0; i < backdrops.size(); ++i) {
+            for (size_t i = 0; i < pairs; ++i) {
                 const Backdrop& picture = backdrops.at(i);
                 TextureReplacement full;
                 if (!texture_png_read((fs::path(argv[3]) / (picture.key + ".png")).string(), full)) {
@@ -150,7 +151,7 @@ int main(int argc, char** argv) {
         MenuBackdrops with_originals(argv[2], drawn, paks), overlay_only(argv[2], drawn);
         fs::remove(overlay);
         const int composed = with_originals.find("charselect-sacred");
-        if (composed < 0 || with_originals.size() != pairs) {
+        if (composed < 0 || with_originals.size() != pairs + 1) {
             throw std::runtime_error("FAIL: overlay: not every pair loaded");
         }
 

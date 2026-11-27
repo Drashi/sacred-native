@@ -731,6 +731,12 @@ void Menu::bind() {
                 // have already observed them through the original WNDPROC.
                 return Result{};
             default:
+                // The application's own messages (WM_APP 0x8000 .. 0xbfff, e.g. 0x8001 during a network game) have
+                // no default action: Windows returns 0.
+                if (a[1] >= 0x8000 && a[1] <= 0xbfff) {
+                    return Result{};
+                }
+
                 throw GuestFault("unimplemented default window message " + std::to_string(a[1]));
             }
         },

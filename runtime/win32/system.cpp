@@ -1,6 +1,7 @@
 #include "startup.h"
 #include <algorithm>
 #include <cerrno>
+#include <cstdio>
 #include <fcntl.h>
 #include <filesystem>
 #include <sys/stat.h>
@@ -8,10 +9,10 @@
 
 namespace sacred {
 namespace {
-constexpr uint32_t error_path_not_found = 3, error_access_denied = 5, error_invalid_handle = 6,
-                   error_not_enough_memory = 8, error_invalid_parameter = 87, error_file_exists = 80,
-                   error_sharing_violation = 32, error_already_exists = 183, error_env_not_found = 203,
-                   error_too_many_posts = 298, error_invalid_address = 487;
+constexpr uint32_t error_file_not_found = 2, error_path_not_found = 3, error_access_denied = 5,
+                   error_invalid_handle = 6, error_not_enough_memory = 8, error_invalid_parameter = 87,
+                   error_file_exists = 80, error_sharing_violation = 32, error_already_exists = 183,
+                   error_env_not_found = 203, error_too_many_posts = 298, error_invalid_address = 487;
 constexpr uint32_t mem_commit_reserve = 0x3000, mem_release = 0x8000, page_readwrite = 4;
 constexpr uint32_t attribute_readonly = 1, attribute_archive = 0x20, attribute_normal = 0x80;
 
@@ -75,6 +76,18 @@ void Startup::bind_system() {
              }
 
              return Result{0, {}};
+         });
+    // Creating a multiplayer game starts the dedicated server, GameServer.exe, as its own process: a Windows program
+    // this port does not run. The launch fails as it would without the file, and the game logs that and goes on
+    // (it never waits for the server). No other caller starts a process.
+    bind("CreateProcessA",
+         {Convention::Stdcall, ReturnChannel::Eax, {{4, in}, {4, in}, {4}, {4}, {4}, {4}, {4}, {4, in}, {4}, {4}}, ""},
+         [this](Control&, const std::vector<uint64_t>& a) {
+             const std::string application = a[0] ? ansi(uint32_t(a[0])) : std::string();
+             const std::string command = a[1] ? ansi(uint32_t(a[1])) : std::string();
+             std::fprintf(stderr, "CREATE_PROCESS application=%s command=\"%s\" result=unsupported\n",
+                          application.c_str(), command.c_str());
+             return Result{error(error_file_not_found), {}};
          });
     bind("OutputDebugStringA", {Convention::Stdcall, ReturnChannel::Void, {{4, in}}, ""},
          [this](Control&, const std::vector<uint64_t>& a) {

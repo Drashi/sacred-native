@@ -574,8 +574,11 @@ DirectDraw::Inset DirectDraw::inset_view(int32_t width, int32_t height) {
     // character select stand in the middle of the menu canvas (platform/letterbox.h), and without a wide picture
     // (inset_backdrop) only that middle is shown.
     const int extension = menu_canvas_extension(int(configured_width_), int(configured_height_));
+    // The network windows (lobby, account) are drawn by the main menu at the frame's left, like the original 4:3
+    // screen: a still screen, not the canvas.
     const bool canvas = extension && (inset_screen_ & (inset_screen_main | inset_screen_character)) &&
-                        !(inset_screen_ & (inset_screen_options | inset_screen_loading | inset_screen_world_map));
+                        !(inset_screen_ & (inset_screen_options | inset_screen_loading | inset_screen_world_map |
+                                           inset_screen_network));
     inset.view = fit_inset(inset_centred_ ? (width - inset_width) / 2
                            : canvas       ? extension
                                           : 0,
@@ -623,6 +626,10 @@ void DirectDraw::inset_backdrop(uint32_t window, Inset& inset) {
 
     if (!index && (inset_screen_ & inset_screen_world_map)) {
         index = size_t(backdrops_->find("worldmap") + 1);
+    }
+
+    if (!index && (inset_screen_ & inset_screen_network)) {
+        index = size_t(backdrops_->find("network") + 1);
     }
 
     backdrop_shown_ = index;
@@ -845,11 +852,15 @@ uint32_t DirectDraw::wide_water(uint32_t window, uint32_t texture, const Backdro
 }
 
 // The word after the inset word tells the guest whether the last present showed an inset (1), one of the menu
-// canvas (3: main menu, character select) or none (0): 3D scene draws map their projection into the inset only then,
+// canvas (3: main menu, character select), a network window's (2: from the frame's left in a main menu frame;
+// message boxes keep their place) or none (0): 3D scene draws map their projection into the inset only then,
 // message boxes are centred on the canvas (tools/lift/resolution_sites.json, FUN_0075ed40, FUN_00722500).
 void DirectDraw::shown_inset(const Inset& inset) {
     if (inset_word) {
-        control_.memory.store32(inset_word + 4, inset.on ? inset.canvas ? 3u : 1u : 0u);
+        control_.memory.store32(inset_word + 4, !inset.on                                ? 0u
+                                                : inset.canvas                           ? 3u
+                                                : (inset_screen_ & inset_screen_network) ? 2u
+                                                                                         : 1u);
     }
 }
 

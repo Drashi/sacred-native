@@ -391,6 +391,32 @@ int main() {
             CHECK(MenuBackdrops("", {}).notes.empty());
         }
 
+        { // The network windows' picture: their screen in the middle, mirrored at its edges out to the sides.
+            std::vector<uint8_t> screen(size_t(1024) * 768 * 4);
+            for (size_t i = 0; i < screen.size(); ++i) {
+                screen[i] = uint8_t(i / 4 % 1024 * 7 + i % 4 + i / 4096); // column, channel and row in each byte
+            }
+
+            const Backdrop picture = network_picture(screen);
+            CHECK(picture.key == "network" && picture.width == 1836 && picture.height == 768 && !picture.alpha);
+            CHECK(picture.centre_left() == 406);
+            auto pixel = [](const std::vector<uint8_t>& rgba, uint32_t width, uint32_t x, uint32_t y) {
+                const size_t at = (size_t(y) * width + x) * 4;
+                return std::array<uint8_t, 4>{rgba[at], rgba[at + 1], rgba[at + 2], rgba[at + 3]};
+            };
+            auto opaque = [&](uint32_t x, uint32_t y) {
+                auto p = pixel(screen, 1024, x, y);
+                p[3] = 255;
+                return p;
+            };
+            CHECK(pixel(picture.rgba, 1836, 406, 5) == opaque(0, 5) &&
+                  pixel(picture.rgba, 1836, 1429, 700) == opaque(1023, 700));
+            CHECK(pixel(picture.rgba, 1836, 405, 5) == opaque(0, 5) &&
+                  pixel(picture.rgba, 1836, 0, 9) == opaque(405, 9));
+            CHECK(pixel(picture.rgba, 1836, 1430, 700) == opaque(1023, 700) &&
+                  pixel(picture.rgba, 1836, 1835, 1) == opaque(1023 - 405, 1));
+        }
+
         { // The wide water textures of the menu canvas (wide_water_texture).
             double x = 0, y = 0;
             // The main menu's floor: the middle of screen row 765 is about u 0.5 (8 pixels right of the canvas

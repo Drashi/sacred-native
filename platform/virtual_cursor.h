@@ -45,10 +45,16 @@ public:
 
     // Host pointer reported at (host_x, host_y). An unanchored cursor takes the host position; only a report inside
     // the client area becomes the anchor, so an out-of-area first report cannot fix an offset through the clamp.
+    // A host pointer at or past an edge of the client area that is not moving away from it puts the guest cursor on
+    // that edge: SetCursorPos leaves the guest offset from the host (the game moves it by +31,+23 after a special
+    // skill on an enemy), and in fullscreen the host pointer stops at the screen edge, so an offset towards the
+    // middle would otherwise keep that edge of the game out of reach until the pointer is pushed against the
+    // opposite edge.
     void host_motion(int host_x, int host_y) {
         if (anchored_) {
-            x_ = clamp(x_ + host_x - host_x_, width_);
-            y_ = clamp(y_ + host_y - host_y_, height_);
+            const int dx = host_x - host_x_, dy = host_y - host_y_;
+            x_ = to_edge(clamp(x_ + dx, width_), host_x, dx, width_);
+            y_ = to_edge(clamp(y_ + dy, height_), host_y, dy, height_);
         } else {
             x_ = clamp(host_x, width_);
             y_ = clamp(host_y, height_);
@@ -70,6 +76,17 @@ public:
 
 private:
     static int clamp(int value, int extent) { return std::min(std::max(value, 0), extent - 1); }
+    static int to_edge(int guest, int host, int delta, int extent) {
+        if (host <= 0 && delta <= 0) {
+            return 0;
+        }
+
+        if (host >= extent - 1 && delta >= 0) {
+            return extent - 1;
+        }
+
+        return guest;
+    }
     int width_ = 1 << 15, height_ = 1 << 15, x_ = 0, y_ = 0, host_x_ = 0, host_y_ = 0;
     int origin_x_ = 0, origin_y_ = 0;
     bool anchored_ = false;

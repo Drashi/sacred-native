@@ -32,6 +32,12 @@ SDL event pump (`WindowHost::pump`, window thread) -> `events_` and `input_` (po
   cursor, any warp can drop pointer focus under Wayland, and macOS suppresses events after `CGWarpMouseCursorPosition`.
   Test: `menu_virtual_cursor` (`tests/menu/cursor_tests.cpp`)
   (30 s of motion with the game's warp sequence every 60 steps, guest position checked after every step).
+- **The edges resynchronise guest and host.** Without a warp, every `SetCursorPos` displacement stays as an offset
+  between the guest cursor and the host pointer (the game's +31,+23 after a special skill adds up towards the bottom
+  right over a long session). In fullscreen the host pointer stops at the screen edge, so the top and left of the game
+  became unreachable until the pointer was pushed against the opposite edges (issue #19). A host pointer at or past an
+  edge of the client area that is not moving away from it now puts the guest cursor on that edge. Test:
+  `menu_virtual_cursor`.
 - While a QA script runs, real pointer events are dropped and only injected ones count, because replayed absolute
   positions cannot be mixed with real deltas.
 

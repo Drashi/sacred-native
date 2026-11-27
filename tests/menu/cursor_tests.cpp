@@ -215,6 +215,44 @@ void math_tests() {
     EXPECT(moved.y() == 0);
     moved.set_origin(448, 216);
     EXPECT(moved.anchored());
+
+    // Issue #19: the game's SetCursorPos displacement (+31,+23 after a special skill on an enemy) accumulates as an
+    // offset towards the bottom right. In fullscreen the host pointer stops at the screen edge, so the top and left
+    // edges of the game were out of reach; the host pointer reaching an edge now takes the guest cursor with it.
+    sacred::VirtualCursor warped;
+    warped.set_bounds(2560, 1080);
+    warped.host_motion(1000, 500);
+    EXPECT(warped.anchored());
+    for (int i = 0; i < 4; ++i) {
+        warped.set(warped.x() + 31, warped.y() + 23);
+    }
+
+    EXPECT(warped.x() == 1124 && warped.y() == 592);
+    warped.host_motion(500, 100);
+    EXPECT(warped.x() == 624 && warped.y() == 192);
+    warped.host_motion(400, 0);
+    EXPECT(warped.x() == 524 && warped.y() == 0);
+    warped.host_motion(0, 0);
+    EXPECT(warped.x() == 0 && warped.y() == 0);
+    // Leaving the edge follows the host exactly again.
+    warped.host_motion(10, 20);
+    EXPECT(warped.x() == 10 && warped.y() == 20);
+    // Above the window (the menu bar strip of a notched MacBook) counts as the edge too.
+    warped.set(300, 300);
+    warped.host_motion(10, -12);
+    EXPECT(warped.x() == 300 && warped.y() == 0);
+    // Resting on an edge while the game moves the guest: the next motion along the edge brings it back.
+    warped.set(warped.x() + 31, warped.y() + 23);
+    EXPECT(warped.y() == 23);
+    warped.host_motion(15, -12);
+    EXPECT(warped.x() == 336 && warped.y() == 0);
+    // The far edges work the same way, and moving away from an edge keeps the delta.
+    warped.set(2000, 900);
+    warped.host_motion(2559, 1079);
+    EXPECT(warped.x() == 2559 && warped.y() == 1079);
+    warped.set(2400, 1000);
+    warped.host_motion(2558, 1078);
+    EXPECT(warped.x() == 2399 && warped.y() == 999);
 }
 
 void gamepad_tests() {

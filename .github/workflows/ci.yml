@@ -108,5 +108,5 @@ jobs:
           prerelease=()
           [[ "$GITHUB_REF_NAME" == *-* ]] && prerelease=(--prerelease)
           gh release create "$GITHUB_REF_NAME" dist/sacred-native-*.tar.gz dist/sacred-native-*.zip dist/SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" --verify-tag --title "Sacred Native $GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" \
             --notes "$summary" --generate-notes "${prerelease[@]}"

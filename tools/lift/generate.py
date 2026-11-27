@@ -48,10 +48,16 @@ BUILD: Final = Path(os.environ.get("SACRED_GENERATED_DIR", ROOT / "build/generat
 RESOLUTION_SITES: Final = ROOT / "tools/lift/resolution_sites.json"
 # Native stand-ins (runtime/sacred/native.c) that a direct CALL rel32 of these Sacred.exe functions runs instead of
 # their region code. Every other way in still runs the generated code.
-NATIVE_CALLS: Final = {0x00640410: "sacred_native_00640410",
+NATIVE_CALLS: Final = {0x00640410: "sacred_native_00640410", 0x0041b510: "sacred_native_0041b510",
                         # the ground mesh (runtime/ddraw/ground_mesh.cpp)
                         0x0062ae90: "sacred_native_0062ae90", 0x0062d3c0: "sacred_native_0062d3c0",
                         0x00629180: "sacred_native_00629180", 0x006292c0: "sacred_native_006292c0"}
+# The code a stand-in does the work of where it reads more than its own function's bytes: (address, length) ranges
+# and the FNV-1a of those bytes in that order. With any other bytes the call keeps the region code.
+NATIVE_CODE: Final = {
+    # worldState_lightAt with lightIndex_find and _ftol
+    0x0041b510: (((0x0041b510, 1202), (0x0041de70, 61), (0x0084a1f4, 39)), 0x1ba870b6),
+}
 # A native check in front of an instruction that, when it returns nonzero, continues the guest code at another
 # address of the same function: (target, C condition). The condition may read guest registers and memory but
 # takes no `c` (promote.py keeps the registers in locals across it).
@@ -137,6 +143,8 @@ class RegionTranslator(T.Translator):
     direct_region: dict[int, int] = {}
     called: set[int] = set()
     natives: set[str] = set()
+    #: The stand-ins of this module (set by generate(): NATIVE_CALLS whose code is the pinned one).
+    native_calls: dict[int, str] = {}
     #: Routines a run may take in as an operation (set per module by generate()): entry -> x87_fast.Ftol.
     x87_calls: dict[int, x87_fast.Ftol] = {}
 
@@ -147,8 +155,8 @@ class RegionTranslator(T.Translator):
             # the callee came back to this return address with no non-local transfer pending; anything else (and a
             # disabled or too deep direct path) is the driver's, exactly as without it (seh.h RECOMP_DIRECT_*).
             region = self.direct_region[target]
-            callee = NATIVE_CALLS.get(target, f"region_{region:08x}")
-            if target in NATIVE_CALLS:
+            callee = self.native_calls.get(target, f"region_{region:08x}")
+            if target in self.native_calls:
                 self.natives.add(callee)
             else:
                 self.called.add(region)
@@ -501,6 +509,7 @@ def generate(module: Module) -> list[str]:
     tr.direct_region = {}
     tr.called = set()
     tr.x87_calls = {}
+    tr.native_calls = {}
     if module.filename in ("Sacred.exe", "granny.dll") and DIRECT_CALLS:
         start, length = None, 0
         for rva, _ in listing.instructions:
@@ -514,14 +523,20 @@ def generate(module: Module) -> list[str]:
         for address in STAND_INS:  # replaced in the dispatch table by runtime/granny/native.c
             tr.direct_region.pop(address, None)
 
-        if module.filename == "Sacred.exe":
-            for entry, (length, fnv, fistp, ret, count) in X87_FTOL.items():
-                code = relocated[entry - module.base:entry - module.base + length]
-                digest = 0x811c9dc5
-                for byte in code:
+        def fnv1a(ranges) -> int:
+            digest = 0x811c9dc5
+            for address, length in ranges:
+                for byte in original[address - original_base:address - original_base + length]:
                     digest = ((digest ^ byte) * 0x01000193) & 0xffffffff
 
-                if digest == fnv and entry in tr.direct_region and entry not in NATIVE_CALLS:
+            return digest
+
+        if module.filename == "Sacred.exe":
+            tr.native_calls = {entry: name for entry, name in NATIVE_CALLS.items()
+                               if entry not in NATIVE_CODE or fnv1a(NATIVE_CODE[entry][0]) == NATIVE_CODE[entry][1]}
+            for entry, (length, fnv, fistp, ret, count) in X87_FTOL.items():
+                code = original[entry - original_base:entry - original_base + length]
+                if fnv1a(((entry, length),)) == fnv and entry in tr.direct_region and entry not in NATIVE_CALLS:
                     opcode = ((code[fistp] & 7) << 8) | code[fistp + 1]
                     tr.x87_calls[entry] = x87_fast.Ftol(entry + fistp, opcode, entry + ret, count)
 

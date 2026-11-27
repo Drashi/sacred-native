@@ -48,8 +48,9 @@ guest address to its region and block.
   when every path in the region overwrites it before any read (`tests/lift/test_flag_liveness.py`).
 - **Native stand-ins.** `NATIVE_CALLS` in `generate.py` routes a few hot functions to hand-written C
   (`runtime/sacred/native.c`, `runtime/granny/native.c`). A stand-in is bound to the exact code bytes it was written
-  against and produces the same guest memory writes and integer registers. `SACRED_GRANNY_NATIVE=verify` runs both
-  versions and compares them; `=0` turns the stand-ins off.
+  against and produces the same guest memory writes and integer registers. `SACRED_GRANNY_NATIVE=verify` (granny.dll)
+  and `SACRED_EXE_NATIVE=verify` (Sacred.exe) run both versions and compare them; `SACRED_GRANNY_NATIVE=0` turns the
+  granny.dll stand-ins off.
 - **Resolution hooks.** `tools/lift/resolution.py` and `resolution_sites.json` patch the places where the game
   hard-codes 1024x768, for the optional HD mode.
 

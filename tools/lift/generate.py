@@ -20,8 +20,10 @@ import resolution as R
 import promote
 import recipe as RECIPE
 
-_LABEL: Final = re.compile(r"([LF]_[0-9a-f]{8}): ;")  # F_: the per-instruction code behind an x87 run (x87_fast)
-_GOTO: Final = re.compile(r"\bgoto ([LF]_[0-9a-f]{8});")
+# F_: the per-instruction code behind an x87 run, T_: behind the tick of a block that a run enters from a lowered
+# call, V_: behind the verify run of such a call (x87_fast).
+_LABEL: Final = re.compile(r"([LFTV]_[0-9a-f]{8}): ;")
+_GOTO: Final = re.compile(r"\bgoto ([LFTV]_[0-9a-f]{8});")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,10 +48,16 @@ BUILD: Final = Path(os.environ.get("SACRED_GENERATED_DIR", ROOT / "build/generat
 RESOLUTION_SITES: Final = ROOT / "tools/lift/resolution_sites.json"
 # Native stand-ins (runtime/sacred/native.c) that a direct CALL rel32 of these Sacred.exe functions runs instead of
 # their region code. Every other way in still runs the generated code.
-NATIVE_CALLS: Final = {0x00640410: "sacred_native_00640410",
+NATIVE_CALLS: Final = {0x00640410: "sacred_native_00640410", 0x0041b510: "sacred_native_0041b510",
                         # the ground mesh (runtime/ddraw/ground_mesh.cpp)
                         0x0062ae90: "sacred_native_0062ae90", 0x0062d3c0: "sacred_native_0062d3c0",
                         0x00629180: "sacred_native_00629180", 0x006292c0: "sacred_native_006292c0"}
+# The code a stand-in does the work of where it reads more than its own function's bytes: (address, length) ranges
+# and the FNV-1a of those bytes in that order. With any other bytes the call keeps the region code.
+NATIVE_CODE: Final = {
+    # worldState_lightAt with lightIndex_find and _ftol
+    0x0041b510: (((0x0041b510, 1202), (0x0041de70, 61), (0x0084a1f4, 39)), 0x1ba870b6),
+}
 # A native check in front of an instruction that, when it returns nonzero, continues the guest code at another
 # address of the same function: (target, C condition). The condition may read guest registers and memory but
 # takes no `c` (promote.py keeps the registers in locals across it).
@@ -58,6 +66,10 @@ NATIVE_JUMPS: Final = {
     # skipped while the ground mesh draws the ground, except for water and lava tiles (type byte [esp+0x64]).
     0x0062b103: (0x0062b7ff, "sacred_ground_skip_build(rd8(c->r[4] + 0x64u))"),
 }
+# The C runtime's _ftol of Sacred.exe, which the x87 runs take in as an operation (x87_fast.Compiler.call): entry ->
+# (length and FNV-1a of its code, offset of its FISTP m64, offset of its RET, instructions a call executes). The
+# lowering is tied to those bytes: with any others the call stays a call.
+X87_FTOL: Final = {0x0084a1f4: (39, 0x09a81b5a, 0x19, 0x26, 15)}
 STAND_INS: Final = frozenset(int(a, 16) for a in re.findall(
     r"^STAND_IN\(\d+, ([0-9a-f]{8})\)", (ROOT / "runtime/granny/native.c").read_text(), re.M))
 # SACRED_DIRECT_CALLS=0 generates the flat form (every CALL and RET through the driver) for comparison.
@@ -131,6 +143,10 @@ class RegionTranslator(T.Translator):
     direct_region: dict[int, int] = {}
     called: set[int] = set()
     natives: set[str] = set()
+    #: The stand-ins of this module (set by generate(): NATIVE_CALLS whose code is the pinned one).
+    native_calls: dict[int, str] = {}
+    #: Routines a run may take in as an operation (set per module by generate()): entry -> x87_fast.Ftol.
+    x87_calls: dict[int, x87_fast.Ftol] = {}
 
     def _emit(self, fn, index, ins, mnemonic, next_pc, live):
         if mnemonic == "CALL" and (target := self.branch_target(ins)) in self.direct_region:
@@ -139,16 +155,19 @@ class RegionTranslator(T.Translator):
             # the callee came back to this return address with no non-local transfer pending; anything else (and a
             # disabled or too deep direct path) is the driver's, exactly as without it (seh.h RECOMP_DIRECT_*).
             region = self.direct_region[target]
-            callee = NATIVE_CALLS.get(target, f"region_{region:08x}")
-            if target in NATIVE_CALLS:
+            callee = self.native_calls.get(target, f"region_{region:08x}")
+            if target in self.native_calls:
                 self.natives.add(callee)
             else:
                 self.called.add(region)
 
             back = f"goto L_{next_pc:08x};" if next_pc in fn.index else "return;"
+            # The verify mode of a lowered routine compares its run with what the call left (x87_fast.h).
+            verify = ("if (RECOMP_UNLIKELY(x87f_ftol_mode == 2u)) x87f_ftol_verify_end(c); "
+                      if target in self.x87_calls else "")
             return [f"c->r[4] -= 4; wr32(c->r[4], 0x{next_pc:08x}u);",
                     f"c->eip = 0x{target:08x}u;",
-                    f"if (RECOMP_DIRECT_OK(c)) {{ RECOMP_DIRECT_CALL(c, {callee}); "
+                    f"if (RECOMP_DIRECT_OK(c)) {{ RECOMP_DIRECT_CALL(c, {callee}); {verify}"
                     f"if (RECOMP_DIRECT_BACK(c, 0x{next_pc:08x}u)) {back} }}",
                     "return;"]
 
@@ -381,22 +400,38 @@ def region_body(tr, fn, instructions: list, leaders: set[int], quarantined: list
         # A hooked instruction keeps its own code: a native x87 run would skip the hook.
         return i not in hooks and not any("recomp_unmodelled" in line for line in emitted[i])
 
+    def inert_at(k: int) -> bool:
+        return x87_fast.inert(instructions[k], emitted[k], needs_eip)
+
+    # Direct calls of a routine the runs take in (x87_fast.Call). A run goes on behind such a call when the next
+    # instruction follows in this region: that instruction starts a block, whose tick the run counts.
+    calls: dict[int, x87_fast.Call] = {}
+    for i, ins in enumerate(instructions):
+        routine = tr.x87_calls.get(tr.branch_target(ins)) if x87_runs and ins.mnem == "CALL" else None
+        if routine is not None and usable(i):
+            calls[i] = x87_fast.Call(routine, fn.fallthrough[i], ticks[i + 1] if falls(i) else None)
+
     runs: dict[int, list[str]] = {}
     i = 0
     while x87_runs and i < n:
-        if instructions[i].mnem in x87_fast.SUPPORTED and usable(i):
+        if (instructions[i].mnem in x87_fast.SUPPORTED or i in calls) and usable(i):
             limit = i + 1
-            while limit < n and falls(limit - 1) and limit not in ticks and usable(limit):
+            while (limit < n and falls(limit - 1) and usable(limit) and
+                   (limit not in ticks or limit in calls or limit - 1 in calls)):
                 limit += 1
 
-            run = x87_fast.compile_run(tr.image, instructions, emitted, i, limit,
-                                       lambda k: x87_fast.inert(instructions[k], emitted[k], needs_eip), exit_lines)
+            run = x87_fast.compile_run(tr.image, instructions, emitted, i, limit, inert_at, exit_lines, calls)
             if run is not None:
                 runs[i] = run[1]
                 i = run[0] + 1
                 continue
 
         i += 1
+
+    # The verify mode's run of each lowered call alone, in front of the call's own code.
+    verify = {i: x87_fast.compile_run(tr.image, instructions, emitted, i, i + 1, inert_at,
+                                      lambda k: ["x87f_ftol_verify_inline(c);"], calls, verify=True)[1]
+              for i in sorted(calls)}
 
     # Where the region can be entered (its switch): block starts, which are also every address a jump, a call's
     # return or the scheduler resumes at, and the instructions that may raise a guest exception (a handler that
@@ -417,9 +452,12 @@ def region_body(tr, fn, instructions: list, leaders: set[int], quarantined: list
             body += [(f"recomp_source(c, 0x{ins.addr:08x}u);" if ticks[i] == 1 else
                       f"recomp_block(c, 0x{ins.addr:08x}u, {ticks[i]}u);") if transfer else
                      f"recomp_tick(c, {ticks[i]}u);"]
+            if i - 1 in calls and i not in calls:
+                body += [f"T_{ins.addr:08x}: ;"]  # where a run that came in over the call hands back
 
         before, after = hooks.get(i, ([], []))
         body += runs.get(i, [])
+        body += verify.get(i, [])
         if i not in ticks and needs_eip(emitted[i]):
             body += [f"c->eip = 0x{ins.addr:08x}u;"]
 
@@ -470,6 +508,8 @@ def generate(module: Module) -> list[str]:
     # leader once a region has 128 instructions), so every listed address maps to the function that will hold it.
     tr.direct_region = {}
     tr.called = set()
+    tr.x87_calls = {}
+    tr.native_calls = {}
     if module.filename in ("Sacred.exe", "granny.dll") and DIRECT_CALLS:
         start, length = None, 0
         for rva, _ in listing.instructions:
@@ -482,6 +522,23 @@ def generate(module: Module) -> list[str]:
 
         for address in STAND_INS:  # replaced in the dispatch table by runtime/granny/native.c
             tr.direct_region.pop(address, None)
+
+        def fnv1a(ranges) -> int:
+            digest = 0x811c9dc5
+            for address, length in ranges:
+                for byte in original[address - original_base:address - original_base + length]:
+                    digest = ((digest ^ byte) * 0x01000193) & 0xffffffff
+
+            return digest
+
+        if module.filename == "Sacred.exe":
+            tr.native_calls = {entry: name for entry, name in NATIVE_CALLS.items()
+                               if entry not in NATIVE_CODE or fnv1a(NATIVE_CODE[entry][0]) == NATIVE_CODE[entry][1]}
+            for entry, (length, fnv, fistp, ret, count) in X87_FTOL.items():
+                code = original[entry - original_base:entry - original_base + length]
+                if fnv1a(((entry, length),)) == fnv and entry in tr.direct_region and entry not in NATIVE_CALLS:
+                    opcode = ((code[fistp] & 7) << 8) | code[fistp + 1]
+                    tr.x87_calls[entry] = x87_fast.Ftol(entry + fistp, opcode, entry + ret, count)
 
     # Resolution-dependent sites (an opt-in screen size): only the main executable, pinned to its hash.
     resolution = None

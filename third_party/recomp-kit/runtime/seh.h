@@ -61,8 +61,9 @@ extern ptrdiff_t recomp_transfer_offset;
         __attribute__((musttail)) return function(c);                                                            \
         _Pragma("GCC diagnostic pop")                                                                            \
     }
-/* The compiled function of an indirect call or jump target, from this thread's dispatch cache; null for a host
- * function or anything the driver has to handle. */
+/* What runs an indirect call or jump target from the calling region, from this thread's dispatch cache: its compiled
+ * function, or for a host function one that has the driver dispatch it there and then; null for anything the driver
+ * has to handle itself. */
 void (*recomp_direct_target(X86 *c, uint32_t target))(X86 *);
 #define RECOMP_DIRECT_BACK(c, ret) \
     ((c)->eip == (ret) && !*(const uint64_t *)((const char *)(c) + recomp_transfer_offset))

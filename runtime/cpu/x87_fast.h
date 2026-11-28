@@ -168,6 +168,33 @@ RECOMP_HOT_INLINE int x87f_c1_sqrt(double x, double r, unsigned* c1) {
     *c1 = fma(-r, r, x) < 0;
     return x87f_c1_wide(x) & x87f_c1_wide(r);
 }
+/* CALL _ftol inside a run (tools/lift/x87_fast.py, Compiler.call). The routine is the C runtime's (generate.py pins
+ * its bytes): PUSH EBP; MOV EBP,ESP; ADD ESP,-12; FSTCW [EBP-2]; WAIT; MOV AX,[EBP-2]; OR AH,0xc; MOV [EBP-4],AX;
+ * FLDCW [EBP-4]; FISTP qword [EBP-12]; FLDCW [EBP-2]; MOV EAX,[EBP-12]; MOV EDX,[EBP-8]; LEAVE; RET. Under the entry
+ * conditions of a run (every exception masked, PE set, nothing pending) and for a value that truncates into 64 bits,
+ * a call from ESP = S leaves exactly this, and the run writes all of it:
+ *   - EDX:EAX = the value truncated; EBP, ESP and the other registers as they were;
+ *   - CF = OF = ZF = 0, SF and PF of (control word >> 8) | 0xc (the OR), AF of the ADD ESP,-12;
+ *   - below ESP: the return address at S-4, EBP at S-8, the control word at S-10, the truncating one at S-12, the
+ *     64-bit result at S-20;
+ *   - x87: ST0 popped (its register keeps the value, tagged empty), the control word as before, C1 clear (a
+ *     truncation never rounds up; PE is set already), the instruction pointer and opcode of the FISTP, the data
+ *     pointer S-20;
+ *   - EIP at the return address, and the block accounting of the call (seh.h): the routine's RET as the last
+ *     source, its instructions on the budget (the run offers the baton at its next tick, not inside).
+ * A NaN or a value outside the 64-bit range (the routine's invalid operation, integer indefinite) leaves the run and
+ * takes the call. SACRED_FTOL_INLINE=0 takes the call always; =verify takes it always too, runs the one-call run in
+ * front of it and compares everything listed above with what the routine left (FTOL_VERIFY lines on stderr). */
+extern uint8_t x87f_ftol_mode; /* 0 the call, 1 in the run, 2 verify */
+RECOMP_HOT_INLINE int x87f_ftol_ok(double v, unsigned mode) {
+    return (x87f_ftol_mode == mode) & (v >= -0x1p63) & (v < 0x1p63);
+}
+
+/* Verify mode: the state in front of the call is kept; the one-call run's result is recorded and the state put
+ * back; after the routine has returned the two are compared. */
+void x87f_ftol_verify_begin(X86* c);
+void x87f_ftol_verify_inline(X86* c);
+void x87f_ftol_verify_end(X86* c);
 /* Deoptimisation: n registers at TOP-relative positions rel[i] (bit i of `full`: still on the stack), the TOP of the
  * moment, the status word and, when the resumed instruction does not set it itself, the data pointer. */
 RECOMP_COLD void x87f_spill(X86* c, unsigned t0, unsigned n, const int8_t* rel, const double* v, unsigned full, int top,

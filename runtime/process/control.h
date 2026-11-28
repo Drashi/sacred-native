@@ -146,8 +146,10 @@ public:
     // of Sacred.exe was replaced. Process-wide.
     static void enable_direct_calls(bool on);
     static bool direct_calls();
-    // The compiled function a direct indirect call or jump of the generated code may run for target (seh.h
-    // recomp_direct_target): the entry dispatch() would run, or null where dispatch() would do anything else.
+    // What a direct indirect call or jump of the generated code may run for target (seh.h recomp_direct_target):
+    // the compiled entry dispatch() would run, for a host function a function that makes that dispatch() from the
+    // calling region (SACRED_HOST_DIRECT=0: null, the driver's as before), or null where dispatch() would do
+    // anything else.
     void (*direct_target(uint32_t target))(X86*);
     std::function<void(const std::string&, uint32_t, const std::vector<uint64_t>&, ReturnChannel, const Result&)>
         observe_host;

@@ -48,8 +48,9 @@ guest address to its region and block.
   when every path in the region overwrites it before any read (`tests/lift/test_flag_liveness.py`).
 - **Native stand-ins.** `NATIVE_CALLS` in `generate.py` routes a few hot functions to hand-written C
   (`runtime/sacred/native.c`, `runtime/granny/native.c`). A stand-in is bound to the exact code bytes it was written
-  against and produces the same guest memory writes and integer registers. `SACRED_GRANNY_NATIVE=verify` runs both
-  versions and compares them; `=0` turns the stand-ins off.
+  against and produces the same guest memory writes and integer registers. `SACRED_GRANNY_NATIVE=verify` (granny.dll)
+  and `SACRED_EXE_NATIVE=verify` (Sacred.exe) run both versions and compare them; `SACRED_GRANNY_NATIVE=0` turns the
+  granny.dll stand-ins off.
 - **Resolution hooks.** `tools/lift/resolution.py` and `resolution_sites.json` patch the places where the game
   hard-codes 1024x768, for the optional HD mode.
 
@@ -65,7 +66,9 @@ with `-Werror`.
 - **Fast path.** In the state the game actually runs in (precision 53 or 24 bits, round to nearest) additions,
   subtractions, multiplications and divisions of ordinary operands use host doubles, with exact status bits derived
   from the rounding error (`runtime/cpu/x87.h`, tested against the SoftFloat path in `tests/cpu/x87_fast_tests.c`).
-  Anything else takes the SoftFloat path. `tools/lift/x87_fast.py` lowers whole runs of x87 instructions.
+  Anything else takes the SoftFloat path. `tools/lift/x87_fast.py` lowers whole runs of x87 instructions; a run takes
+  a direct call of the C runtime's `_ftol` in as one operation and goes on behind it (`SACRED_FTOL_INLINE=verify`
+  compares that with the routine while the game runs, `=0` keeps the call).
 - **MMX** aliases the x87 registers; **SSE/3DNow** forms that the game executes are implemented lane by lane
   (`runtime/cpu/simd.cpp`) with MXCSR rounding and status.
 - **CPUID** answers from a fixed profile (`data/entry-cpuid.json`), never from the host.
@@ -88,7 +91,8 @@ The CPU semantics were checked instruction by instruction against reference impl
 - **Calls into the host.** Each import has a declared calling convention, argument layout and stack cleanup
   (`runtime/process/control.cpp`, `boundary.c`). Guest pointers are never cast to host function pointers, and variadic
   functions such as `wsprintf` parse the guest stack themselves. An import without an implementation stops the program
-  with its name and caller.
+  with its name and caller. A host function called from a region that was itself called directly is dispatched from
+  that region, so the chain of direct calls stays in place (`SACRED_HOST_DIRECT=0` returns to the driver first).
 - **Exceptions.** The guest's SEH chain, MSVC C++ exception metadata and unwinding run as translated guest code. A
   guest exception is dispatched through guest structures; host `longjmp` happens only in the C driver that owns the
   checkpoint, after native resources are released.

@@ -115,6 +115,9 @@ if(EXISTS "${SACRED_PYTHON}")
     # Region flag liveness and block ticks of the shard generator (tools/lift/generate.py).
     add_test(NAME lift_flag_liveness COMMAND "${SACRED_PYTHON}" -m pytest -q -p no:cacheprovider
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/lift/test_flag_liveness.py")
+    # CALL _ftol as an operation of the native-double x87 runs (tools/lift/x87_fast.py).
+    add_test(NAME lift_x87_ftol COMMAND "${SACRED_PYTHON}" -m pytest -q -p no:cacheprovider
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/lift/test_x87_ftol.py")
     add_test(NAME lift_resolution_table COMMAND "${SACRED_PYTHON}" -m pytest -q -p no:cacheprovider
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/lift/test_resolution.py")
     # Translation recipe: the export's listing without the game's bytes (tools/lift/recipe.py).
